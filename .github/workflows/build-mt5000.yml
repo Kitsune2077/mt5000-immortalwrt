@@ -240,8 +240,13 @@ jobs:
           grep -qE 'CONFIG_KERNEL_DEBUG_INFO_BTF=y' .config            || { echo "::error::内核 BTF 缺失"; exit 1; }
           grep -q "CONFIG_TARGET_PREINIT_IP=\"$LAN_IP\"" .config       || { echo "::error::LAN IP 未生效"; exit 1; }
           grep -qE "CONFIG_TARGET_ROOTFS_PARTSIZE=$ROOTFS_SIZE" .config || { echo "::error::分区大小未生效"; exit 1; }
-          [ "$ENABLE_STORE" = "true" ] && { grep -qE 'CONFIG_PACKAGE_luci-app-store=y' .config || { echo "::error::iStore 缺失"; exit 1; }; }
-          [ "$BAKE_DAEDE" = "true" ]   && { grep -qE 'CONFIG_PACKAGE_daed=y' .config          || { echo "::error::daed 缺失"; exit 1; }; }
+          if [ "$ENABLE_STORE" = "true" ]; then
+            grep -qE 'CONFIG_PACKAGE_luci-app-store=y' .config || { echo "::error::iStore 缺失"; exit 1; }
+          fi
+          if [ "$BAKE_DAEDE" = "true" ]; then
+            grep -qE 'CONFIG_PACKAGE_daed=y' .config || { echo "::error::daed 缺失"; exit 1; }
+          fi
+          echo "sanity check passed"
 
       - name: Generate first-boot customization (uci-defaults)
         run: |
