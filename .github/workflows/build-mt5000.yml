@@ -87,6 +87,16 @@ on:
         required: false
         default: 'ImmortalWrt'
         type: string
+      extra_feeds:
+        description: '额外软件源, 多个用 | 分隔, 每个为标准 feeds.conf 行。例: src-git ken https://github.com/kenzok8/openwrt-packages;main'
+        required: false
+        default: ''
+        type: string
+      extra_packages:
+        description: '额外编译进固件的软件包, 空格分隔。例: luci-app-zerotier htop'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   build:
@@ -110,6 +120,8 @@ jobs:
       PPPOE_PASSWORD: ${{ github.event.inputs.pppoe_password }}
       PPPOE_SECRET: ${{ secrets.PPPOE_PASSWORD }}
       HOSTNAME: ${{ github.event.inputs.hostname || 'ImmortalWrt' }}
+      EXTRA_FEEDS: ${{ github.event.inputs.extra_feeds }}
+      EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages }}
 
     steps:
       - name: Free disk space
@@ -178,6 +190,14 @@ jobs:
           if [ "$BAKE_DAEDE" = "true" ]; then
             echo 'src-git daede https://github.com/kenzok8/openwrt-daede' >> feeds.conf.default
           fi
+          if [ -n "$EXTRA_FEEDS" ]; then
+            printf '%s' "$EXTRA_FEEDS" | tr '|' '\n' | while IFS= read -r FEEDLINE; do
+              FEEDLINE=$(printf '%s' "$FEEDLINE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+              case "$FEEDLINE" in ''|'#'*) continue ;; esac
+              echo "$FEEDLINE" >> feeds.conf.default
+              echo "added extra feed: $FEEDLINE"
+            done
+          fi
           ./scripts/feeds update -a
           ./scripts/feeds install -a
           if [ "$ENABLE_STORE" = "true" ]; then
@@ -191,6 +211,13 @@ jobs:
             sed -i 's/const reloadWaitTimeout = 75 \* time.Second/const reloadWaitTimeout = 600 * time.Second/' \
               feeds/daede/daed/patches/0004-restart-daed-on-dashboard-reload-timeout.patch || \
               echo "::warning::daed 0004 补丁结构已变动, 600s 超时修改未应用 (沿用默认 75s)"
+          fi
+          if [ -n "$EXTRA_FEEDS" ]; then
+            # extra feeds take precedence over stock feeds on package-name conflicts
+            for FEED in $(printf '%s' "$EXTRA_FEEDS" | tr '|' '\n' | sed -n 's/^src-git[[:space:]][[:space:]]*\([^ ;]*\).*/\1/p'); do
+              echo "force-installing packages from extra feed: $FEED"
+              ./scripts/feeds install -a -f -p "$FEED" || echo "::warning::feed $FEED 强制安装失败(名称是否正确?)"
+            done
           fi
 
       - name: Generate .config
@@ -235,6 +262,13 @@ jobs:
               'CONFIG_PACKAGE_luci-app-dockerman=y' >> .config
           fi
 
+          if [ -n "$EXTRA_PACKAGES" ]; then
+            for PKG in $EXTRA_PACKAGES; do
+              case "$PKG" in '#'*) continue ;; esac
+              printf 'CONFIG_PACKAGE_%s=y\n' "$PKG" >> .config
+            done
+          fi
+
           make defconfig
 
           echo "=== sanity check ==="
@@ -247,6 +281,17 @@ jobs:
           fi
           if [ "$BAKE_DAEDE" = "true" ]; then
             grep -qE 'CONFIG_PACKAGE_daed=y' .config || { echo "::error::daed 缺失"; exit 1; }
+          fi
+          if [ -n "$EXTRA_PACKAGES" ]; then
+            MISSING=""
+            for PKG in $EXTRA_PACKAGES; do
+              case "$PKG" in '#'*) continue ;; esac
+              grep -q "^CONFIG_PACKAGE_${PKG}=y" .config || MISSING="$MISSING $PKG"
+            done
+            if [ -n "$MISSING" ]; then
+              echo "::error::以下额外软件包未生效(名称错误或依赖未满足):$MISSING"
+              exit 1
+            fi
           fi
           echo "sanity check passed"
 

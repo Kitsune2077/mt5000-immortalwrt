@@ -26,6 +26,8 @@
 | `pppoe_username` | PPPoE 宽带账号 | 空 |
 | `pppoe_password` | PPPoE 密码(留空则用仓库 Secret) | 空 |
 | `hostname` | 路由器主机名 | `ImmortalWrt` |
+| `extra_feeds` | 额外软件源(多个用 `\|` 分隔) | 空 |
+| `extra_packages` | 额外编译进固件的软件包(空格分隔) | 空 |
 
 **PPPoE 密码安全建议**:workflow 输入会显示在运行记录里。推荐把密码配置为
 仓库 Secret(Settings → Secrets and variables → Actions → 新建 `PPPOE_PASSWORD`),
@@ -69,6 +71,42 @@ tarball 更替所致,过几天重试或在其 feed 提 issue。
   固件镜像、`sha256sums` 校验、`*.manifest` 软件清单、`config.buildinfo` 构建配置;
   Release 说明自动生成本次构建的选项汇总表、内置功能清单、刷机方法与
   daede 安装指引(永久保留,方便随时回溯某个版本)
+
+## 如何添加软件包 / 软件源
+
+### 方式一:编译时临时添加(不改仓库)
+
+Run workflow 时填写:
+
+- **`extra_packages`** — 空格分隔的包名,直接编入固件。
+  例:`luci-app-zerotier htop fdisk`
+- **`extra_feeds`** — 额外软件源,多个用 `|` 分隔,每个是标准 feeds.conf 行。
+  例:`src-git ken https://github.com/kenzok8/openwrt-packages;main`
+
+  与官方源出现**同名包冲突时,额外源会强制接管**(如需官方版请勿添加同名包)。
+  名称写错或依赖不满足时,sanity check 会红牌列出未生效的包。
+
+### 方式二:固化到仓库(永久默认)
+
+- **软件包**:编辑 `config/mt5000.seed`,添加 `CONFIG_PACKAGE_xxx=y`
+- **软件源**:参考 workflow 中 istore 的写法,在 feeds 步骤把
+  `echo 'src-git <名称> <地址>[;分支]' >> feeds.conf.default` 写死
+- 也可以把包源码直接放进仓库 `packages/` 目录随仓库携带(无需外部 feed)
+
+### 常用第三方源示例
+
+| 仓库 | 内容 |
+|---|---|
+| `src-git ken https://github.com/kenzok8/openwrt-packages;main` | 常用 LuCI 插件合集(去广告/多播/网易云等) |
+| `src-git daede https://github.com/kenzok8/openwrt-daede` | dae/daed 代理(勾选 bake_daede 已内置此源) |
+| `src-git istore https://github.com/linkease/istore;main` | iStore 商店(enable_store 已内置) |
+
+### 注意事项
+
+- **kmod 类包**:编译期添加没有问题(会针对本固件内核一起编译);
+  限制仅在"刷机后运行时在线安装 kmod"的场景(无匹配内核的在线仓库)
+- 新增的 LuCI 应用会随 `LUCI_LANG_zh_Hans=y` 自动带上中文翻译(如有)
+- Go 类大型插件(如 daed)会显著增加编译时长
 
 ## 维护说明
 
