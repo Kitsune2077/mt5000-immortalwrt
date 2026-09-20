@@ -259,27 +259,24 @@ jobs:
             Europe/Berlin)    TZP='CET-1CEST,M3.5.0,M10.5.0/3' ;;
             *)                TZP='UTC0' ;;
           esac
-          cat > "$UD/99-timezone" <<EOF
-#!/bin/sh
-uci set system.@system[0].timezone='$TZP'
-uci set system.@system[0].zonename='$TIMEZONE'
-uci commit system
-EOF
+          printf '%s\n' \
+            '#!/bin/sh' \
+            "uci set system.@system[0].timezone='$TZP'" \
+            "uci set system.@system[0].zonename='$TIMEZONE'" \
+            'uci commit system' > "$UD/99-timezone"
 
           # hostname
-          cat > "$UD/99-hostname" <<EOF
-#!/bin/sh
-uci set system.@system[0].hostname='$HOSTNAME'
-uci commit system
-EOF
+          printf '%s\n' \
+            '#!/bin/sh' \
+            "uci set system.@system[0].hostname='$HOSTNAME'" \
+            'uci commit system' > "$UD/99-hostname"
 
           # UI language
           if [ "$UI_LANG" = "zh-cn" ]; then
-            cat > "$UD/99-luci-lang" <<'EOF'
-#!/bin/sh
-uci set luci.main.lang='zh_cn'
-uci commit luci
-EOF
+            printf '%s\n' \
+              '#!/bin/sh' \
+              "uci set luci.main.lang='zh_cn'" \
+              'uci commit luci' > "$UD/99-luci-lang"
           fi
 
           # PPPoE (WAN = eth1 on MT5000)
@@ -288,13 +285,12 @@ EOF
             [ -z "$PP" ] && PP="$PPPOE_SECRET"
             PPE=$(printf '%s' "$PP" | sed "s/'/'\\\\''/g")
             UPE=$(printf '%s' "$PPPOE_USERNAME" | sed "s/'/'\\\\''/g")
-            cat > "$UD/99-pppoe" <<EOF
-#!/bin/sh
-uci set network.wan.proto='pppoe'
-uci set network.wan.username='$UPE'
-uci set network.wan.password='$PPE'
-uci commit network
-EOF
+            printf '%s\n' \
+              '#!/bin/sh' \
+              "uci set network.wan.proto='pppoe'" \
+              "uci set network.wan.username='$UPE'" \
+              "uci set network.wan.password='$PPE'" \
+              'uci commit network' > "$UD/99-pppoe"
           fi
 
           chmod 755 "$UD"/99-*
