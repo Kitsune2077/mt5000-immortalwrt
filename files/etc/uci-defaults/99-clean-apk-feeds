@@ -1,0 +1,9 @@
+#!/bin/sh
+# Self-built firmware generates one repo line per build-time feed in
+# /etc/apk/repositories.d/distfeeds.list, all pointing at the official
+# snapshot server where custom feeds (istore/daede) and some feeds
+# (video) do not exist -> wget "error 8" noise on every apk update.
+# Strip those dead lines on first boot. iStore registers its own real
+# feed (istore.linkease.net) by itself.
+sed -i '\#/packages/.*/istore/packages.adb#d;\#/packages/.*/daede/#d;\#/packages/.*/video/#d' /etc/apk/repositories.d/distfeeds.list 2>/dev/null
+exit 0

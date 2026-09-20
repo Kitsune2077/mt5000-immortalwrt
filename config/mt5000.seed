@@ -1,0 +1,44 @@
+# Target: GL.iNet MT5000 (Brume 3) / MediaTek MT7987A filogic
+CONFIG_TARGET_mediatek=y
+CONFIG_TARGET_mediatek_filogic=y
+CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt5000=y
+
+# Rootfs size (8GB eMMC, leave headroom for extra packages)
+CONFIG_TARGET_ROOTFS_PARTSIZE=2048
+
+# Default LAN IP 10.0.0.1 (official base-files mechanism, also covers failsafe/preinit)
+CONFIG_IMAGEOPT=y
+CONFIG_TARGET_DEFAULT_LAN_IP_FROM_PREINIT=y
+CONFIG_PREINITOPT=y
+CONFIG_TARGET_PREINIT_IP="10.0.0.1"
+CONFIG_TARGET_PREINIT_NETMASK="255.255.255.0"
+CONFIG_TARGET_PREINIT_BROADCAST="10.0.0.255"
+
+# Kernel prerequisites for dae/dade eBPF (CO-RE) transparent proxy
+# BTF needs full debug info (REDUCED must be off)
+CONFIG_KERNEL_DEBUG_INFO_BTF=y
+# CONFIG_KERNEL_DEBUG_INFO_REDUCED is not set
+CONFIG_KERNEL_XDP_SOCKETS=y
+
+# Runtime deps baked into firmware
+# (self-built kernel kmods are NOT available from any online repo, so all
+#  kmods required by daede/dae must be built into the image; the dae/daed
+#  userland binaries are installed later via kenzok8/openwrt-daede script)
+CONFIG_PACKAGE_ca-bundle=y
+CONFIG_PACKAGE_v2ray-geoip=y
+CONFIG_PACKAGE_v2ray-geosite=y
+CONFIG_PACKAGE_kmod-sched-core=y
+CONFIG_PACKAGE_kmod-sched-bpf=y
+CONFIG_PACKAGE_kmod-veth=y
+CONFIG_PACKAGE_kmod-xdp-sockets-diag=y
+CONFIG_PACKAGE_kmod-nft-tproxy=y
+
+# LuCI simplified Chinese UI (default language set by files/etc/uci-defaults)
+CONFIG_LUCI_LANG_zh_Hans=y
+
+# Status page: CPU model / freq / temperature (ImmortalWrt specific)
+CONFIG_PACKAGE_autocore=y
+
+# iStore app store (feed added by the workflow)
+CONFIG_PACKAGE_xz-utils=y
+CONFIG_PACKAGE_luci-app-store=y

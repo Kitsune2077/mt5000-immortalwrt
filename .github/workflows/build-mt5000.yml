@@ -1,0 +1,327 @@
+name: Build ImmortalWrt for GL.iNet MT5000
+
+on:
+  workflow_dispatch:
+    inputs:
+      iwrt_ref:
+        description: 'ImmortalWrt 基础版本 (commit/tag/branch)'
+        required: false
+        default: 'f44d1535b4'   # 与设备补丁验证过的已知可用基线
+        type: string
+      lan_ip:
+        description: '默认 LAN IP (如 10.0.0.1)'
+        required: false
+        default: '10.0.0.1'
+        type: string
+      timezone:
+        description: '默认时区'
+        required: false
+        default: 'Asia/Shanghai'
+        type: choice
+        options:
+          - Asia/Shanghai
+          - Asia/Hong_Kong
+          - Asia/Taipei
+          - Asia/Tokyo
+          - Asia/Singapore
+          - Europe/Berlin
+          - UTC
+      ui_lang:
+        description: 'LuCI 界面语言'
+        required: false
+        default: 'zh-cn'
+        type: choice
+        options:
+          - zh-cn
+          - en
+      rootfs_size:
+        description: '软件包分区大小 (MB)'
+        required: false
+        default: '2048'
+        type: choice
+        options:
+          - '1024'
+          - '2048'
+          - '4096'
+          - '8192'
+      luci_flavor:
+        description: 'LuCI 套件'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - light
+      enable_store:
+        description: '集成 iStore 软件商店'
+        required: false
+        default: true
+        type: boolean
+      bake_daede:
+        description: '将 daede(dae/daed 代理)编译进固件 (否则刷机后脚本安装)'
+        required: false
+        default: false
+        type: boolean
+      include_docker:
+        description: '集成 Docker 及 Dockerman 管理界面'
+        required: false
+        default: false
+        type: boolean
+      pppoe:
+        description: '预置 PPPoE 拨号 (WAN 口 eth1)'
+        required: false
+        default: false
+        type: boolean
+      pppoe_username:
+        description: 'PPPoE 宽带账号 (启用 PPPoE 时填写)'
+        required: false
+        default: ''
+        type: string
+      pppoe_password:
+        description: 'PPPoE 密码 (留空则使用仓库 Secret: PPPOE_PASSWORD)'
+        required: false
+        default: ''
+        type: string
+      hostname:
+        description: '路由器主机名'
+        required: false
+        default: 'ImmortalWrt'
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+
+    env:
+      IWRT_REF: ${{ github.event.inputs.iwrt_ref || 'f44d1535b4' }}
+      LAN_IP: ${{ github.event.inputs.lan_ip || '10.0.0.1' }}
+      TIMEZONE: ${{ github.event.inputs.timezone || 'Asia/Shanghai' }}
+      UI_LANG: ${{ github.event.inputs.ui_lang || 'zh-cn' }}
+      ROOTFS_SIZE: ${{ github.event.inputs.rootfs_size || '2048' }}
+      LUCI_FLAVOR: ${{ github.event.inputs.luci_flavor || 'full' }}
+      ENABLE_STORE: ${{ github.event.inputs.enable_store }}
+      BAKE_DAEDE: ${{ github.event.inputs.bake_daede }}
+      INCLUDE_DOCKER: ${{ github.event.inputs.include_docker }}
+      PPPOE: ${{ github.event.inputs.pppoe }}
+      PPPOE_USERNAME: ${{ github.event.inputs.pppoe_username }}
+      PPPOE_PASSWORD: ${{ github.event.inputs.pppoe_password }}
+      PPPOE_SECRET: ${{ secrets.PPPOE_PASSWORD }}
+      HOSTNAME: ${{ github.event.inputs.hostname || 'ImmortalWrt' }}
+
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache || true
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h /
+
+      - name: Checkout builder repo
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            ack antlr3 asciidoc autoconf automake autopoint binutils bison \
+            build-essential bzip2 ccache clang cmake cpio curl \
+            device-tree-compiler dialog dwarves ecj fastjar flex gawk gettext \
+            gcc-multilib g++-multilib git gperf help2man intltool \
+            lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev \
+            libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libpython3-dev \
+            libreadline-dev libssl-dev libtool libyaml-dev libz-dev lld llvm \
+            mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf \
+            python3 python3-pip python3-ply python3-docutils python3-pyelftools \
+            re2c rsync scons squashfs-tools subversion swig texinfo unzip \
+            vim wget xmlto xxd zlib1g-dev
+
+      - name: Validate inputs
+        run: |
+          echo "$LAN_IP" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || { echo "::error::非法 LAN IP: $LAN_IP"; exit 1; }
+          if [ "$PPPOE" = "true" ] && [ -z "$PPPOE_USERNAME" ]; then
+            echo "::error::启用了 PPPoE 但未填写账号 (pppoe_username)"; exit 1
+          fi
+          if [ "$PPPOE" = "true" ] && [ -z "$PPPOE_PASSWORD" ] && [ -z "$PPPOE_SECRET" ]; then
+            echo "::error::PPPoE 密码为空: 请填写 pppoe_password 或配置仓库 Secret PPPOE_PASSWORD"; exit 1
+          fi
+
+      - name: Clone ImmortalWrt source
+        run: |
+          git clone --filter=blob:none https://github.com/immortalwrt/immortalwrt
+          cd immortalwrt
+          git checkout "$IWRT_REF"
+          git log -1 --format='base: %h %s'
+
+      - name: Cache downloaded sources (dl/)
+        uses: actions/cache@v4
+        with:
+          path: immortalwrt/dl
+          key: dl-${{ env.IWRT_REF }}-${{ hashFiles('config/mt5000.seed', 'patches/*.patch') }}-${{ env.ROOTFS_SIZE }}-${{ env.BAKE_DAEDE }}-${{ env.INCLUDE_DOCKER }}
+
+      - name: Apply MT5000 device patch
+        run: |
+          cd immortalwrt
+          for p in ../patches/*.patch; do
+            echo "applying $p"
+            git apply --check "$p" && git apply "$p" || { echo "::error::$p 应用失败, 基础版本可能已变动; 请改用已知可用基线 f44d1535b4 或重新生成补丁"; exit 1; }
+          done
+
+      - name: Overlay files/ and feeds
+        run: |
+          cd immortalwrt
+          cp -r ../files/. ./
+          if [ "$ENABLE_STORE" = "true" ]; then
+            echo 'src-git istore https://github.com/linkease/istore;main' >> feeds.conf.default
+          fi
+          if [ "$BAKE_DAEDE" = "true" ]; then
+            echo 'src-git daede https://github.com/kenzok8/openwrt-daede' >> feeds.conf.default
+          fi
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          if [ "$ENABLE_STORE" = "true" ]; then
+            ./scripts/feeds install -d y -p istore luci-app-store
+          fi
+          if [ "$BAKE_DAEDE" = "true" ]; then
+            # resolve name conflicts with packages feed, then force-install daede feed versions
+            rm -f package/feeds/packages/dae package/feeds/packages/daed
+            ./scripts/feeds install -f -p daede dae daed luci-app-daede
+            # extend daed reload timeout 75s -> 600s (1GB-RAM devices need longer)
+            sed -i 's/const reloadWaitTimeout = 75 \* time.Second/const reloadWaitTimeout = 600 * time.Second/' \
+              feeds/daede/daed/patches/0004-restart-daed-on-dashboard-reload-timeout.patch || \
+              echo "::warning::daed 0004 补丁结构已变动, 600s 超时修改未应用 (沿用默认 75s)"
+          fi
+
+      - name: Generate .config
+        run: |
+          cd immortalwrt
+          cp ../config/mt5000.seed .config
+
+          # --- parameterize seed ---
+          LAN_BC="${LAN_IP%.*}.255"
+          sed -i "s|^CONFIG_TARGET_ROOTFS_PARTSIZE=.*|CONFIG_TARGET_ROOTFS_PARTSIZE=$ROOTFS_SIZE|" .config
+          sed -i "s|^CONFIG_TARGET_PREINIT_IP=.*|CONFIG_TARGET_PREINIT_IP=\"$LAN_IP\"|" .config
+          sed -i "s|^CONFIG_TARGET_PREINIT_BROADCAST=.*|CONFIG_TARGET_PREINIT_BROADCAST=\"$LAN_BC\"|" .config
+
+          if [ "$UI_LANG" = "en" ]; then
+            sed -i 's|^CONFIG_LUCI_LANG_zh_Hans=y|# CONFIG_LUCI_LANG_zh_Hans is not set|' .config
+          fi
+
+          if [ "$LUCI_FLAVOR" = "light" ]; then
+            printf 'CONFIG_PACKAGE_luci-light=y\n# CONFIG_PACKAGE_luci is not set\n' >> .config
+          fi
+
+          if [ "$ENABLE_STORE" != "true" ]; then
+            sed -i 's|^CONFIG_PACKAGE_luci-app-store=y|# CONFIG_PACKAGE_luci-app-store is not set|' .config
+          fi
+
+          if [ "$BAKE_DAEDE" = "true" ]; then
+            printf 'CONFIG_PACKAGE_luci-app-daede=y\nCONFIG_PACKAGE_luci-app-daede_daed=y\nCONFIG_PACKAGE_daed=y\n' >> .config
+          fi
+
+          if [ "$INCLUDE_DOCKER" = "true" ]; then
+            printf '%s\n' \
+              'CONFIG_KERNEL_CGROUPS=y' \
+              'CONFIG_KERNEL_CGROUP_CPUACCT=y' \
+              'CONFIG_KERNEL_CGROUP_DEVICE=y' \
+              'CONFIG_KERNEL_CGROUP_FREEZER=y' \
+              'CONFIG_KERNEL_CGROUP_SCHED=y' \
+              'CONFIG_KERNEL_MEMCG=y' \
+              'CONFIG_KERNEL_NAMESPACES=y' \
+              'CONFIG_PACKAGE_cgroupfs-mount=y' \
+              'CONFIG_PACKAGE_docker=y' \
+              'CONFIG_PACKAGE_dockerd=y' \
+              'CONFIG_PACKAGE_luci-app-dockerman=y' >> .config
+          fi
+
+          make defconfig
+
+          echo "=== sanity check ==="
+          grep -qE 'TARGET_mediatek_filogic_DEVICE_glinet_gl-mt5000=y' .config || { echo "::error::设备目标缺失"; exit 1; }
+          grep -qE 'CONFIG_KERNEL_DEBUG_INFO_BTF=y' .config            || { echo "::error::内核 BTF 缺失"; exit 1; }
+          grep -q "CONFIG_TARGET_PREINIT_IP=\"$LAN_IP\"" .config       || { echo "::error::LAN IP 未生效"; exit 1; }
+          grep -qE "CONFIG_TARGET_ROOTFS_PARTSIZE=$ROOTFS_SIZE" .config || { echo "::error::分区大小未生效"; exit 1; }
+          [ "$ENABLE_STORE" = "true" ] && { grep -qE 'CONFIG_PACKAGE_luci-app-store=y' .config || { echo "::error::iStore 缺失"; exit 1; }; }
+          [ "$BAKE_DAEDE" = "true" ]   && { grep -qE 'CONFIG_PACKAGE_daed=y' .config          || { echo "::error::daed 缺失"; exit 1; }; }
+
+      - name: Generate first-boot customization (uci-defaults)
+        run: |
+          cd immortalwrt
+          UD=files/etc/uci-defaults
+          mkdir -p "$UD"
+
+          # timezone (POSIX TZ for busybox)
+          case "$TIMEZONE" in
+            Asia/Shanghai)    TZP='CST-8' ;;
+            Asia/Hong_Kong)   TZP='HKT-8' ;;
+            Asia/Taipei)      TZP='CST-8' ;;
+            Asia/Tokyo)       TZP='JST-9' ;;
+            Asia/Singapore)   TZP='SGT-8' ;;
+            Europe/Berlin)    TZP='CET-1CEST,M3.5.0,M10.5.0/3' ;;
+            *)                TZP='UTC0' ;;
+          esac
+          cat > "$UD/99-timezone" <<EOF
+#!/bin/sh
+uci set system.@system[0].timezone='$TZP'
+uci set system.@system[0].zonename='$TIMEZONE'
+uci commit system
+EOF
+
+          # hostname
+          cat > "$UD/99-hostname" <<EOF
+#!/bin/sh
+uci set system.@system[0].hostname='$HOSTNAME'
+uci commit system
+EOF
+
+          # UI language
+          if [ "$UI_LANG" = "zh-cn" ]; then
+            cat > "$UD/99-luci-lang" <<'EOF'
+#!/bin/sh
+uci set luci.main.lang='zh_cn'
+uci commit luci
+EOF
+          fi
+
+          # PPPoE (WAN = eth1 on MT5000)
+          if [ "$PPPOE" = "true" ]; then
+            PP="$PPPOE_PASSWORD"
+            [ -z "$PP" ] && PP="$PPPOE_SECRET"
+            PPE=$(printf '%s' "$PP" | sed "s/'/'\\\\''/g")
+            UPE=$(printf '%s' "$PPPOE_USERNAME" | sed "s/'/'\\\\''/g")
+            cat > "$UD/99-pppoe" <<EOF
+#!/bin/sh
+uci set network.wan.proto='pppoe'
+uci set network.wan.username='$UPE'
+uci set network.wan.password='$PPE'
+uci commit network
+EOF
+          fi
+
+          chmod 755 "$UD"/99-*
+          ls -la "$UD"/
+
+      - name: Download sources
+        run: |
+          cd immortalwrt
+          make download -j"$(nproc)"
+
+      - name: Build firmware
+        run: |
+          cd immortalwrt
+          make -j"$(nproc)" || { echo "::group::verbose retry log"; make -j1 V=s; echo "::endgroup::"; exit 1; }
+
+      - name: Show images
+        run: |
+          ls -lh immortalwrt/bin/targets/mediatek/filogic/ || true
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: immortalwrt-mt5000-r${{ github.run_number }}-${{ env.IWRT_REF }}
+          path: |
+            immortalwrt/bin/targets/mediatek/filogic/*glinet_gl-mt5000*
+            immortalwrt/bin/targets/mediatek/filogic/sha256sums
+            immortalwrt/bin/targets/mediatek/filogic/*.manifest
+            immortalwrt/bin/targets/mediatek/filogic/config.buildinfo
+          if-no-files-found: error
+          retention-days: 30
