@@ -60,6 +60,16 @@ tarball 更替所致,过几天重试或在其 feed 提 issue。
 4. 刷机:优先用 `*glinet_gl-mt5000-squashfs-sysupgrade.bin`
    (原厂固件升级页直接刷;或 `sysupgrade -n` 不保留配置)
 
+## 产物发布
+
+构建成功后会自动:
+
+- 上传 **Artifacts**(保留 30 天,登录后可下载)
+- 创建 **Release**,tag 为 `mt5000-r<运行编号>`,附件包含:
+  固件镜像、`sha256sums` 校验、`*.manifest` 软件清单、`config.buildinfo` 构建配置;
+  Release 说明自动生成本次构建的选项汇总表、内置功能清单、刷机方法与
+  daede 安装指引(永久保留,方便随时回溯某个版本)
+
 ## 维护说明
 
 - 想跟进 ImmortalWrt master:`iwrt_ref` 填 `master`;设备补丁应用失败时

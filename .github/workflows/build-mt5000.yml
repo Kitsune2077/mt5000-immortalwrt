@@ -92,6 +92,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 350
+    permissions:
+      contents: write
 
     env:
       IWRT_REF: ${{ github.event.inputs.iwrt_ref || 'f44d1535b4' }}
@@ -315,6 +317,66 @@ jobs:
         run: |
           ls -lh immortalwrt/bin/targets/mediatek/filogic/ || true
 
+      - name: Generate release notes
+        run: |
+          DATE=$(date -u '+%Y-%m-%d %H:%M UTC')
+          IMGDIR=immortalwrt/bin/targets/mediatek/filogic
+          SYS=$(ls "$IMGDIR" 2>/dev/null | grep 'glinet_gl-mt5000-squashfs-sysupgrade.bin$' | head -n1)
+          [ -n "$SYS" ] || SYS="(见附件)"
+          [ "$ENABLE_STORE" = "true" ]  && STORE_OPT='已集成'  || STORE_OPT='未集成'
+          [ "$BAKE_DAEDE" = "true" ]   && DAEDE_OPT='编入固件(600s 超时补丁)' || DAEDE_OPT='运行时安装(默认)'
+          [ "$INCLUDE_DOCKER" = "true" ] && DOCKER_OPT='已集成' || DOCKER_OPT='未集成'
+          if [ "$PPPOE" = "true" ]; then PPPOE_OPT="已预置 (账号: $PPPOE_USERNAME)"; else PPPOE_OPT='未预置 (DHCP)'; fi
+          if [ "$LUCI_FLAVOR" = "light" ]; then LUCI_OPT='luci-light (精简)'; else LUCI_OPT='luci (完整)'; fi
+
+          {
+            echo "## ImmortalWrt — GL.iNet MT5000 (Brume 3)"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| 构建编号 | r${{ github.run_number }} |"
+            echo "| 基础版本 | \`$IWRT_REF\` |"
+            echo "| 构建时间 | $DATE |"
+            echo "| 默认 LAN IP | \`$LAN_IP\` |"
+            echo "| 时区 / 语言 | $TIMEZONE / $UI_LANG |"
+            echo "| 软件包分区 | ${ROOTFS_SIZE} MB |"
+            echo "| LuCI 套件 | $LUCI_OPT |"
+            echo "| iStore | $STORE_OPT |"
+            echo "| daede 代理 | $DAEDE_OPT |"
+            echo "| Docker | $DOCKER_OPT |"
+            echo "| PPPoE | $PPPOE_OPT |"
+            echo "| 主机名 | $HOSTNAME |"
+            echo ""
+            echo "### 固件内置"
+            echo ""
+            echo "- MT5000 设备支持(上游 PR [openwrt#24237](https://github.com/openwrt/openwrt/pull/24237) 移植)"
+            echo "- 内核 BTF + XDP_SOCKETS(eBPF CO-RE 前置,daede 可用)"
+            echo "- daede 运行前置依赖:kmod 五件套 + v2ray geo 数据 + ca-bundle"
+            echo "- autocore 状态页(CPU 型号/频率/温度)"
+            echo "- 首启自动清理会 404 的 apk 软件源"
+            echo ""
+            echo "### 刷机方法"
+            echo ""
+            echo "1. 主升级文件:\`$SYS\`"
+            echo "2. 原厂固件:管理界面「升级」页直接上传该文件;或在 SSH 中执行"
+            echo '   ```'
+            echo '   sysupgrade -n /tmp/*.bin   # -n 不保留配置(从原厂升级务必使用)'
+            echo '   ```'
+            echo "3. 已在 ImmortalWrt:系统「备份/升级」页上传,可保留配置"
+            echo "4. 刷机后访问 http://$LAN_IP (账号 root,无密码,请尽快设置)"
+            echo ""
+            echo "### daede 代理安装(未编入固件时)"
+            echo ""
+            echo '   ```'
+            echo '   wget -O - https://raw.githubusercontent.com/kenzok8/openwrt-daede/refs/heads/main/scripts/install.sh | ash'
+            echo '   ```'
+            echo ""
+            echo "> 完整校验值见附件 sha256sums;软件清单见 *.manifest;构建配置见 config.buildinfo"
+          } > release_notes.md
+
+          echo "=== release notes ==="
+          cat release_notes.md
+
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -326,3 +388,17 @@ jobs:
             immortalwrt/bin/targets/mediatek/filogic/config.buildinfo
           if-no-files-found: error
           retention-days: 30
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: mt5000-r${{ github.run_number }}
+          name: MT5000 固件 r${{ github.run_number }} (base ${{ env.IWRT_REF }})
+          body_path: release_notes.md
+          files: |
+            immortalwrt/bin/targets/mediatek/filogic/*glinet_gl-mt5000*
+            immortalwrt/bin/targets/mediatek/filogic/sha256sums
+            immortalwrt/bin/targets/mediatek/filogic/*.manifest
+            immortalwrt/bin/targets/mediatek/filogic/config.buildinfo
