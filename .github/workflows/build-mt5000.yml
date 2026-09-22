@@ -82,6 +82,43 @@ on:
         required: false
         default: ''
         type: string
+      enable_ipv6:
+        description: '启用 IPv6 (参考 Aethersailor wiki: WAN 委托前缀 + LAN RA/SLAAC 下发)'
+        required: false
+        default: false
+        type: boolean
+      lan_ipv6_assign:
+        description: 'LAN IPv6 分配长度 ip6assign (上游只给 /64 时用 64; 要再向二级路由委派用 60/56)'
+        required: false
+        default: '64'
+        type: choice
+        options:
+          - '64'
+          - '60'
+          - '56'
+          - 'disabled'
+      lan_ipv6_suffix:
+        description: 'LAN 接口自身 IPv6 后缀 ip6ifaceid'
+        required: false
+        default: 'eui64'
+        type: choice
+        options:
+          - 'eui64'
+          - 'random'
+          - '::1'
+      lan_ipv6_dhcpv6:
+        description: 'LAN DHCPv6 服务 (disabled = 纯 SLAAC, 兼容安卓; server = 有状态分配)'
+        required: false
+        default: 'disabled'
+        type: choice
+        options:
+          - 'disabled'
+          - 'server'
+      lan_ipv6_dns:
+        description: '向客户端通告路由器为 IPv6 DNS (false = 客户端继续用 IPv4 DNS, 保持 OpenClash 分流)'
+        required: false
+        default: false
+        type: boolean
       hostname:
         description: '路由器主机名'
         required: false
@@ -119,6 +156,11 @@ jobs:
       PPPOE_USERNAME: ${{ github.event.inputs.pppoe_username }}
       PPPOE_PASSWORD: ${{ github.event.inputs.pppoe_password }}
       PPPOE_SECRET: ${{ secrets.PPPOE_PASSWORD }}
+      ENABLE_IPV6: ${{ github.event.inputs.enable_ipv6 || 'false' }}
+      LAN_IPV6_ASSIGN: ${{ github.event.inputs.lan_ipv6_assign || '64' }}
+      LAN_IPV6_SUFFIX: ${{ github.event.inputs.lan_ipv6_suffix || 'eui64' }}
+      LAN_IPV6_DHCPV6: ${{ github.event.inputs.lan_ipv6_dhcpv6 || 'disabled' }}
+      LAN_IPV6_DNS: ${{ github.event.inputs.lan_ipv6_dns || 'false' }}
       HOSTNAME: ${{ github.event.inputs.hostname || 'ImmortalWrt' }}
       EXTRA_FEEDS: ${{ github.event.inputs.extra_feeds }}
       EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages }}
@@ -157,6 +199,20 @@ jobs:
           fi
           if [ "$PPPOE" = "true" ] && [ -z "$PPPOE_PASSWORD" ] && [ -z "$PPPOE_SECRET" ]; then
             echo "::error::PPPoE 密码为空: 请填写 pppoe_password 或配置仓库 Secret PPPOE_PASSWORD"; exit 1
+          fi
+          if [ "$ENABLE_IPV6" = "true" ]; then
+            case "$LAN_IPV6_ASSIGN" in
+              56|60|64|disabled) ;;
+              *) echo "::error::非法 lan_ipv6_assign: $LAN_IPV6_ASSIGN (可选 56/60/64/disabled)"; exit 1 ;;
+            esac
+            case "$LAN_IPV6_SUFFIX" in
+              eui64|random|::1) ;;
+              *) echo "::error::非法 lan_ipv6_suffix: $LAN_IPV6_SUFFIX (可选 eui64/random/::1)"; exit 1 ;;
+            esac
+            case "$LAN_IPV6_DHCPV6" in
+              disabled|server) ;;
+              *) echo "::error::非法 lan_ipv6_dhcpv6: $LAN_IPV6_DHCPV6 (可选 disabled/server)"; exit 1 ;;
+            esac
           fi
 
       - name: Clone ImmortalWrt source
@@ -345,6 +401,78 @@ jobs:
               'uci commit network' > "$UD/99-pppoe"
           fi
 
+          # IPv6 (参考 Aethersailor/Custom_OpenClash_Rules wiki "OpenWrt IPv6 设置方案")
+          #   WAN: 方案A —— 删掉重复请求 PD 的独立 wan6, 由 wan 自身启用 IPv6 管理并向下游委托前缀
+          #   LAN: 从上游委派前缀中划分子网, RA 服务器 + SLAAC 下发, 关闭 NDP 代理
+          if [ "$ENABLE_IPV6" = "true" ]; then
+            IU="$UD/99-ipv6"
+            printf '%s\n' \
+              '#!/bin/sh' \
+              '# IPv6 per Aethersailor/Custom_OpenClash_Rules wiki (OpenWrt IPv6 设置方案)' \
+              "# 生成参数: ip6assign=$LAN_IPV6_ASSIGN ip6ifaceid=$LAN_IPV6_SUFFIX dhcpv6=$LAN_IPV6_DHCPV6 ipv6_dns=$LAN_IPV6_DNS" \
+              '' \
+              '# --- WAN: 启用内建 IPv6 管理 + 委托上游前缀 ---' \
+              'uci -q delete network.wan6' \
+              "uci -q set network.wan.delegate='1'" \
+              "uci -q set network.wan.ipv6='1'" \
+              'uci -q delete network.wan.ip6assign' \
+              'uci -q delete network.wan.ip6class' \
+              'uci -q delete network.wan.ip6hint' \
+              'uci -q delete network.wan.ip6weight' \
+              '[ -n "$(uci -q get dhcp.wan)" ] && uci -q set dhcp.wan.ignore=1' \
+              '' \
+              '# --- LAN: 从委派前缀中划分子网 ---' \
+              "uci -q set network.lan.delegate='1'" \
+              "uci -q set network.lan.ipv6='1'" \
+              "uci -q set network.lan.ip6ifaceid='$LAN_IPV6_SUFFIX'" > "$IU"
+            if [ "$LAN_IPV6_ASSIGN" = "disabled" ]; then
+              printf '%s\n' \
+                '# 不向下游分配公网 IPv6 前缀' \
+                'uci -q delete network.lan.ip6assign' >> "$IU"
+            else
+              printf '%s\n' \
+                "uci -q set network.lan.ip6assign='$LAN_IPV6_ASSIGN'" >> "$IU"
+            fi
+            printf '%s\n' \
+              '' \
+              '# --- LAN DHCP 服务器: RA 服务器 + SLAAC, NDP 代理关闭 ---' \
+              'uci -q get dhcp.lan >/dev/null || { uci -q set dhcp.lan=dhcp; uci -q set dhcp.lan.interface=lan; }' \
+              "uci -q set dhcp.lan.ra='server'" \
+              "uci -q set dhcp.lan.ra_slaac='1'" \
+              "uci -q set dhcp.lan.ndp='disabled'" \
+              "uci -q set dhcp.lan.dhcpv6='$LAN_IPV6_DHCPV6'" >> "$IU"
+            if [ "$LAN_IPV6_DHCPV6" = "disabled" ]; then
+              printf '%s\n' \
+                '# 无 DHCPv6 -> RA 不带 M/O 标志 (纯 SLAAC)' \
+                'uci -q delete dhcp.lan.ra_flags' \
+                "uci -q add_list dhcp.lan.ra_flags='none'" >> "$IU"
+            else
+              printf '%s\n' \
+                '# 有状态 DHCPv6 -> RA 带 M/O 标志' \
+                'uci -q delete dhcp.lan.ra_flags' \
+                "uci -q add_list dhcp.lan.ra_flags='managed-config'" \
+                "uci -q add_list dhcp.lan.ra_flags='other-config'" >> "$IU"
+            fi
+            if [ "$LAN_IPV6_DNS" = "true" ]; then
+              printf '%s\n' \
+                "uci -q set dhcp.lan.dns_service='1'" >> "$IU"
+            else
+              printf '%s\n' \
+                '# 不通告路由器为 IPv6 DNS -> 客户端继续用路由器 IPv4 地址解析, 保持 OpenClash 分流' \
+                "uci -q set dhcp.lan.dns_service='0'" \
+                'uci -q delete dhcp.lan.dns' >> "$IU"
+            fi
+            printf '%s\n' \
+              '' \
+              '# --- dnsmasq: 不过滤 IPv6 AAAA 记录 ---' \
+              "uci -q set dhcp.@dnsmasq[0].filter_aaaa='0'" \
+              '' \
+              'uci -q commit network' \
+              'uci -q commit dhcp' \
+              'exit 0' >> "$IU"
+            [ -s "$IU" ] || { echo "::error::99-ipv6 未生成"; exit 1; }
+          fi
+
           chmod 755 "$UD"/99-*
           ls -la "$UD"/
 
@@ -373,6 +501,12 @@ jobs:
           [ "$INCLUDE_DOCKER" = "true" ] && DOCKER_OPT='已集成' || DOCKER_OPT='未集成'
           if [ "$PPPOE" = "true" ]; then PPPOE_OPT="已预置 (账号密码不显示)"; else PPPOE_OPT='未预置 (DHCP)'; fi
           if [ "$LUCI_FLAVOR" = "light" ]; then LUCI_OPT='luci-light (精简)'; else LUCI_OPT='luci (完整)'; fi
+          if [ "$ENABLE_IPV6" = "true" ]; then
+            if [ "$LAN_IPV6_DNS" = "true" ]; then IPV6_DNS_OPT='通告 IPv6 DNS'; else IPV6_DNS_OPT='不通告 IPv6 DNS(DNS 走 IPv4)'; fi
+            IPV6_OPT="已启用 (WAN 委托前缀 + LAN RA/SLAAC, ip6assign=$LAN_IPV6_ASSIGN, 后缀 $LAN_IPV6_SUFFIX, DHCPv6 $LAN_IPV6_DHCPV6, $IPV6_DNS_OPT)"
+          else
+            IPV6_OPT='未启用 (首启脚本不写 IPv6 配置)'
+          fi
 
           {
             echo "## ImmortalWrt — GL.iNet MT5000 (Brume 3)"
@@ -390,6 +524,7 @@ jobs:
             echo "| daede 代理 | $DAEDE_OPT |"
             echo "| Docker | $DOCKER_OPT |"
             echo "| PPPoE | $PPPOE_OPT |"
+            echo "| IPv6 | $IPV6_OPT |"
             echo "| 主机名 | $HOSTNAME |"
             echo ""
             echo "### 固件内置"
