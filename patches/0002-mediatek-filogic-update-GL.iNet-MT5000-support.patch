@@ -1,0 +1,680 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kitsune <km2077@foxmail.com>
+Date: Thu, 25 Dec 2025 12:00:00 +0800
+Subject: [PATCH] mediatek: filogic: update GL.iNet GL-MT5000 support
+
+Port of the review-feedback changes accumulated on PR openwrt#24237,
+as incorporated by dmsza/openwrt branch openwrt-main-mt5000
+(commit 8461b1b79b "mediatek: filogic: update GL.iNet GL-MT5000
+support", review feedback from @dmtpascoal and @openwrt-ai):
+
+- rtl8366ub: VLAN 1 default entry no longer carries all member/untag
+  ports (member = 0, untag = 0): no data VLAN reachable through the
+  default PVID; the bridge default_pvid 1 gets programmed per port.
+- rtl8366ub: enforce accept-tagged-only on the CPU port at setup so a
+  stray untagged conduit frame is never classified by the CPU PVID
+  (cf. sja1105 drop_untagged on CPU/DSA ports).
+- rtl8366ub-8021q tagger: move DSA_TAG_PROTO_RTL8366UB_8021Q_VALUE
+  from 32 to 200 (out-of-tree tagger; upstream v7.0 already uses
+  30-32 and master is at 35 - avoids enum id collision).
+- mtk_eth_soc NAPI patch: call mtk_unreg_dev() on the err_free_dummy
+  path (error handling fix) and correct hunk line counts.
+- DTS: rename mt7987a-gl-mt5000.dts -> mt7987a-glinet-gl-mt5000.dts
+  (matches the glinet_* DEVICE naming convention), add serial0 alias
+  and stdout-path, fix LED node names (led@N -> led-N, no unit
+  address without reg), drop redundant SUPPORTED_DEVICES.
+- filogic config: explicitly enable CONFIG_NET_DSA_TAG_RTL8366UB_8021Q.
+- generic config: add "# ... is not set" defaults for other targets.
+
+Whitespace/checkpatch reformatting of the rtl8366ub driver patch from
+the upstream update is intentionally NOT carried over; only the
+functional changes are ported.
+
+diff --git a/target/linux/generic/config-6.18 b/target/linux/generic/config-6.18
+index b8ca70b..823cf21 100644
+--- a/target/linux/generic/config-6.18
++++ b/target/linux/generic/config-6.18
+@@ -4415,6 +4415,7 @@ CONFIG_NET_CORE=y
+ # CONFIG_NET_DSA_QCA8K_LEDS_SUPPORT is not set
+ # CONFIG_NET_DSA_REALTEK is not set
+ # CONFIG_NET_DSA_REALTEK_SMI is not set
++# CONFIG_NET_DSA_REALTEK_RTL8366UB is not set
+ # CONFIG_NET_DSA_SJA1105 is not set
+ # CONFIG_NET_DSA_SMSC_LAN9303_I2C is not set
+ # CONFIG_NET_DSA_SMSC_LAN9303_MDIO is not set
+@@ -4438,6 +4439,7 @@ CONFIG_NET_CORE=y
+ # CONFIG_NET_DSA_TAG_QCA is not set
+ # CONFIG_NET_DSA_TAG_RTL4_A is not set
+ # CONFIG_NET_DSA_TAG_RTL8_4 is not set
++# CONFIG_NET_DSA_TAG_RTL8366UB_8021Q is not set
+ # CONFIG_NET_DSA_TAG_RZN1_A5PSW is not set
+ # CONFIG_NET_DSA_TAG_SJA1105 is not set
+ # CONFIG_NET_DSA_TAG_TRAILER is not set
+diff --git a/target/linux/generic/pending-6.18/795-10-net-dsa-realtek-add-rtl8366ub.patch b/target/linux/generic/pending-6.18/795-10-net-dsa-realtek-add-rtl8366ub.patch
+index 422d9cb..2ef72e6 100644
+--- a/target/linux/generic/pending-6.18/795-10-net-dsa-realtek-add-rtl8366ub.patch
++++ b/target/linux/generic/pending-6.18/795-10-net-dsa-realtek-add-rtl8366ub.patch
+@@ -729,6 +729,15 @@ index 0000000..c4752f2
+ +        return dev_err_probe(priv->dev, ret,
+ +                             "failed to clear CPU VLAN egress overrides\n");
+ +
+++    /* Every frame the tagger emits is VLAN-tagged; never classify a
+++     * stray untagged conduit frame by the CPU PVID (cf. sja1105
+++     * drop_untagged on CPU/DSA ports).
+++     */
+++    ret = rtl8366ub_vlan_set_accept_tagged_only(priv, priv->cpu_port, true);
+++    if (ret)
+++        return dev_err_probe(priv->dev, ret,
+++                             "failed to set CPU port tagged-only\n");
+++
+ +    ret = rtl8366ub_vlan_get_egress_mode(priv, priv->cpu_port,
+ +                                         &egress_mode);
+ +    if (ret)
+@@ -3207,8 +3216,11 @@ index 0000000..bf40d83
+ +int rtl8366ub_switch_init(struct rtl8366ub_priv *priv)
+ +{
+ +    struct rtl8366ub_vlan vlan = {
+-+        .member = RTL8366UB_VALID_PHYSICAL_MASK,
+-+        .untag = RTL8366UB_VALID_PHYSICAL_MASK,
+++        /* No data VLAN may be reachable through a default PVID; the
+++         * bridge's default_pvid 1 populates this per port.
+++         */
+++        .member = 0,
+++        .untag = 0,
+ +        .ivl = false,
+ +    };
+ +    int port;
+diff --git a/target/linux/generic/pending-6.18/795-11-net-dsa-rtl8366ub-8021q-ppe-offload.patch b/target/linux/generic/pending-6.18/795-11-net-dsa-rtl8366ub-8021q-ppe-offload.patch
+index 233892c..363bd1b 100644
+--- a/target/linux/generic/pending-6.18/795-11-net-dsa-rtl8366ub-8021q-ppe-offload.patch
++++ b/target/linux/generic/pending-6.18/795-11-net-dsa-rtl8366ub-8021q-ppe-offload.patch
+@@ -19,11 +19,14 @@ diff --git a/include/net/dsa.h b/include/net/dsa.h
+ index e667b46..5a470b0 100644
+ --- a/include/net/dsa.h
+ +++ b/include/net/dsa.h
+-@@ -57,6 +57,7 @@ struct tc_action;
++@@ -57,6 +57,10 @@ struct tc_action;
+  #define DSA_TAG_PROTO_BRCM_LEGACY_FCS_VALUE	29
+  #define DSA_TAG_PROTO_MXL862_VALUE		30
+  #define DSA_TAG_PROTO_MXL862_8021Q_VALUE	31
+-+#define DSA_TAG_PROTO_RTL8366UB_8021Q_VALUE	32
+++/* Out-of-tree tagger: stay clear of the upstream sequence (v7.0 uses
+++ * 30-32, master is at 35). Proper fix: get an id assigned on netdev.
+++ */
+++#define DSA_TAG_PROTO_RTL8366UB_8021Q_VALUE	200
+  
+  enum dsa_tag_protocol {
+  	DSA_TAG_PROTO_NONE		= DSA_TAG_PROTO_NONE_VALUE,
+@@ -79,7 +82,7 @@ diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
+  			data |= TX_DMA_SPTAG_V3;
+  	}
+  	WRITE_ONCE(desc->txd5, data);
+-@@ -3767,12 +3768,13 @@ static void mtk_gdm_config(struct mtk_eth *eth, u32 id, u32 config)
++@@ -3767,13 +3768,14 @@ static void mtk_gdm_config(struct mtk_eth *eth, u32 id, u32 config)
+  
+  	/* default setup the forward port to send frame to PDMA */
+ -	val &= ~0xffff;
+diff --git a/target/linux/generic/pending-6.18/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch b/target/linux/generic/pending-6.18/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch
+index 39f1ebb..06532f0 100644
+--- a/target/linux/generic/pending-6.18/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch
++++ b/target/linux/generic/pending-6.18/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch
+@@ -39,7 +39,7 @@ index 0c13e2a72b..68edd82895 100644
+  	for (i = 0; i < MTK_MAX_DEVS; i++) {
+  		if (!eth->netdev[i])
+  			continue;
+-@@ -5836,35 +5851,24 @@ static int mtk_probe(struct platform_device *pdev)
++@@ -5836,35 +5851,25 @@ static int mtk_probe(struct platform_device *pdev)
+  		err = register_netdev(eth->netdev[i]);
+  		if (err) {
+  			dev_err(eth->dev, "error bringing up device\n");
+@@ -74,6 +74,7 @@ index 0c13e2a72b..68edd82895 100644
+ -err_unreg_netdev:
+ -	mtk_unreg_dev(eth);
+ +err_free_dummy:
+++	mtk_unreg_dev(eth);
+ +	netif_napi_del(&eth->tx_napi);
+ +	netif_napi_del(&eth->rx_napi);
+ +	free_netdev(eth->dummy_dev);
+diff --git a/target/linux/mediatek/dts/mt7987a-gl-mt5000.dts b/target/linux/mediatek/dts/mt7987a-gl-mt5000.dts
+deleted file mode 100644
+index a6b1d3c..0000000
+--- a/target/linux/mediatek/dts/mt7987a-gl-mt5000.dts
++++ /dev/null
+@@ -1,251 +0,0 @@
+-/* SPDX-License-Identifier: (GPL-2.0 OR MIT) */
+-
+-/dts-v1/;
+-#include "mt7987a.dtsi"
+-#include <dt-bindings/input/input.h>
+-#include <dt-bindings/interrupt-controller/irq.h>
+-#include <dt-bindings/gpio/gpio.h>
+-#include <dt-bindings/leds/common.h>
+-
+-/ {
+-	model = "GL.iNet GL-MT5000";
+-	compatible = "glinet,gl-mt5000",
+-				"mediatek,mt7987a", "mediatek,mt7987";
+-
+-	aliases {
+-		label-mac-device = &gmac1;
+-		led-boot = &led_power;
+-		led-failsafe = &led_power;
+-		led-running = &led_power;
+-		led-upgrade = &led_power;
+-	};
+-
+-	chosen {
+-		bootargs = "console=ttyS0,115200n1 loglevel=8  \
+-				earlycon=uart8250,mmio32,0x11000000 \
+-				root=PARTLABEL=rootfs rootwait \
+-			    rootfstype=squashfs,f2fs pci=pcie_bus_perf";
+-	};
+-
+-	gpio-keys {
+-		compatible = "gpio-keys";
+-
+-		reset {
+-			label = "reset";
+-			linux,code = <KEY_RESTART>;
+-			gpios = <&pio 4 GPIO_ACTIVE_LOW>;
+-			debounce-interval = <10>;
+-		};
+-	};
+-
+-	gpio-export {
+-		compatible = "gpio-export";
+-
+-		usb_power {
+-			gpio-export,name = "usb_power";
+-			gpio-export,output = <1>;
+-			gpios = <&pio 9 GPIO_ACTIVE_HIGH>;
+-		};
+-	};
+-
+-	leds {
+-		compatible = "gpio-leds";
+-
+-		led_power: led@0 {
+-			color = <LED_COLOR_ID_BLUE>;
+-			function = "run";
+-			gpios = <&pio 44 GPIO_ACTIVE_LOW>;
+-			default-state = "on";
+-		};
+-
+-		led@1 {
+-			color = <LED_COLOR_ID_WHITE>;
+-			function = "system";
+-			gpios = <&pio 7 GPIO_ACTIVE_LOW>;
+-		};
+-
+-		led@2 {
+-			color = <LED_COLOR_ID_WHITE>;
+-			function = "vpn";
+-			gpios = <&pio 43 GPIO_ACTIVE_LOW>;
+-		};
+-	};
+-
+-	reg_1p8v: regulator-1p8v {
+-		compatible = "regulator-fixed";
+-		regulator-name = "fixed-1.8V";
+-		regulator-min-microvolt = <1800000>;
+-		regulator-max-microvolt = <1800000>;
+-		regulator-boot-on;
+-		regulator-always-on;
+-	};
+-
+-	reg_3p3v: regulator-3p3v {
+-		compatible = "regulator-fixed";
+-		regulator-name = "fixed-3.3V";
+-		regulator-min-microvolt = <3300000>;
+-		regulator-max-microvolt = <3300000>;
+-		regulator-boot-on;
+-		regulator-always-on;
+-	};
+-
+-};
+-
+-&mmc0 {
+-	pinctrl-names = "default", "state_uhs";
+-	pinctrl-0 = <&mmc_pins_default>;
+-	pinctrl-1 = <&mmc_pins_uhs>;
+-	bus-width = <8>;
+-	max-frequency = <26000000>;
+-	cap-mmc-highspeed;
+-	vqmmc-supply = <&reg_3p3v>;
+-	vmmc-supply = <&reg_3p3v>;
+-	mmc-ddr-3_3v;
+-	non-removable;
+-	no-sd;
+-	no-sdio;
+-	status = "okay";
+-
+-	card@0 {
+-		compatible = "mmc-card";
+-		reg = <0>;
+-
+-		block {
+-			compatible = "block-device";
+-			partitions {
+-				block-partition-env {
+-					partname = "u-boot-env";
+-
+-					nvmem-layout {
+-						compatible = "u-boot,env";
+-					};
+-				};
+-
+-				block-partition-factory {
+-					partname = "factory";
+-
+-					nvmem-layout {
+-						compatible = "fixed-layout";
+-						#address-cells = <1>;
+-						#size-cells = <1>;
+-
+-						macaddr_base: macaddr@4000 {
+-							compatible = "mac-base";
+-							reg = <0x4000 0x6>;
+-							#nvmem-cell-cells = <1>;
+-						};
+-					};
+-
+-				};
+-			};
+-		};
+-	};
+-};
+-
+-&gmac0 {
+-	compatible = "mediatek,eth-mac";
+-	reg = <0>;
+-	mac-type = "gdm";
+-	phy-mode = "2500base-x";
+-	status = "okay";
+-	nvmem-cells = <&macaddr_base 1>;
+-	nvmem-cell-names = "mac-address";
+-
+-	fixed-link {
+-		speed = <2500>;
+-		full-duplex;
+-		pause;
+-	};
+-};
+-
+-&gmac1 {
+-	reg = <1>;
+-	mac-type = "xgdm";
+-	phy-mode = "internal";
+-	phy-handle = <&phy15>;
+-	status = "okay";
+-	nvmem-cells = <&macaddr_base 0>;
+-	nvmem-cell-names = "mac-address";
+-};
+-
+-&mdio {
+-	#address-cells = <1>;
+-	#size-cells = <0>;
+-	reset-gpios = <&pio 0 GPIO_ACTIVE_LOW>;
+-	reset-delay-us = <10000>;
+-	phy15: phy@f {
+-		compatible = "ethernet-phy-ieee802.3-c45";
+-		reg = <15>;
+-		pinctrl-names = "i2p5gbe-led";
+-		pinctrl-0 = <&i2p5gbe_led0_pins>;
+-		phy-mode = "internal";
+-	};
+-
+-	switch@0 {
+-		compatible = "realtek,rtl8366ub";
+-		reg = <0>;
+-		reset-gpios = <&pio 48 GPIO_ACTIVE_LOW>;
+-		#address-cells = <1>;
+-		#size-cells = <0>;
+-
+-		ports {
+-			#address-cells = <1>;
+-			#size-cells = <0>;
+-
+-			port@0 {
+-				reg = <0>;
+-				label = "lan1";
+-				phy-mode = "internal";
+-			};
+-
+-			port@1 {
+-				reg = <1>;
+-				label = "lan2";
+-				phy-mode = "internal";
+-			};
+-
+-			port@17 {
+-				reg = <17>;
+-				label = "cpu";
+-				ethernet = <&gmac0>;
+-				phy-mode = "2500base-x";
+-
+-				fixed-link {
+-					speed = <2500>;
+-					full-duplex;
+-					pause;
+-				};
+-			};
+-		};
+-	};
+-};
+-
+-&ssusb {
+-	status = "okay";
+-};
+-
+-&tphyu3port0 {
+-	status = "okay";
+-};
+-
+-&uart0 {
+-	pinctrl-names = "default";
+-	pinctrl-0 = <&uart0_pins>;
+-	status = "okay";
+-};
+-
+-&infra_bus_prot {
+-	status = "okay";
+-};
+-
+-&boottrap {
+-	status = "okay";
+-};
+-
+-&trng {
+-	status = "okay";
+-};
+-
+-&lvts {
+-	status = "okay";
+-};
+diff --git a/target/linux/mediatek/dts/mt7987a-glinet-gl-mt5000.dts b/target/linux/mediatek/dts/mt7987a-glinet-gl-mt5000.dts
+new file mode 100644
+index 0000000..fc1df4b
+--- /dev/null
++++ b/target/linux/mediatek/dts/mt7987a-glinet-gl-mt5000.dts
+@@ -0,0 +1,253 @@
++/* SPDX-License-Identifier: (GPL-2.0 OR MIT) */
++
++/dts-v1/;
++#include "mt7987a.dtsi"
++#include <dt-bindings/input/input.h>
++#include <dt-bindings/interrupt-controller/irq.h>
++#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/leds/common.h>
++
++/ {
++	model = "GL.iNet GL-MT5000";
++	compatible = "glinet,gl-mt5000",
++				"mediatek,mt7987a", "mediatek,mt7987";
++
++	aliases {
++		label-mac-device = &gmac1;
++		led-boot = &led_power;
++		led-failsafe = &led_power;
++		led-running = &led_power;
++		led-upgrade = &led_power;
++		serial0 = &uart0;
++	};
++
++	chosen {
++		bootargs = "console=ttyS0,115200n1 loglevel=8  \
++				earlycon=uart8250,mmio32,0x11000000 \
++				root=PARTLABEL=rootfs rootwait \
++			    rootfstype=squashfs,f2fs pci=pcie_bus_perf";
++		stdout-path = "serial0:115200n8";
++	};
++
++	gpio-keys {
++		compatible = "gpio-keys";
++
++		reset {
++			label = "reset";
++			linux,code = <KEY_RESTART>;
++			gpios = <&pio 4 GPIO_ACTIVE_LOW>;
++			debounce-interval = <10>;
++		};
++	};
++
++	gpio-export {
++		compatible = "gpio-export";
++
++		usb_power {
++			gpio-export,name = "usb_power";
++			gpio-export,output = <1>;
++			gpios = <&pio 9 GPIO_ACTIVE_HIGH>;
++		};
++	};
++
++	leds {
++		compatible = "gpio-leds";
++
++		led_power: led-0 {
++			color = <LED_COLOR_ID_BLUE>;
++			function = "run";
++			gpios = <&pio 44 GPIO_ACTIVE_LOW>;
++			default-state = "on";
++		};
++
++		led-1 {
++			color = <LED_COLOR_ID_WHITE>;
++			function = "system";
++			gpios = <&pio 7 GPIO_ACTIVE_LOW>;
++		};
++
++		led-2 {
++			color = <LED_COLOR_ID_WHITE>;
++			function = "vpn";
++			gpios = <&pio 43 GPIO_ACTIVE_LOW>;
++		};
++	};
++
++	reg_1p8v: regulator-1p8v {
++		compatible = "regulator-fixed";
++		regulator-name = "fixed-1.8V";
++		regulator-min-microvolt = <1800000>;
++		regulator-max-microvolt = <1800000>;
++		regulator-boot-on;
++		regulator-always-on;
++	};
++
++	reg_3p3v: regulator-3p3v {
++		compatible = "regulator-fixed";
++		regulator-name = "fixed-3.3V";
++		regulator-min-microvolt = <3300000>;
++		regulator-max-microvolt = <3300000>;
++		regulator-boot-on;
++		regulator-always-on;
++	};
++
++};
++
++&mmc0 {
++	pinctrl-names = "default", "state_uhs";
++	pinctrl-0 = <&mmc_pins_default>;
++	pinctrl-1 = <&mmc_pins_uhs>;
++	bus-width = <8>;
++	max-frequency = <26000000>;
++	cap-mmc-highspeed;
++	vqmmc-supply = <&reg_3p3v>;
++	vmmc-supply = <&reg_3p3v>;
++	mmc-ddr-3_3v;
++	non-removable;
++	no-sd;
++	no-sdio;
++	status = "okay";
++
++	card@0 {
++		compatible = "mmc-card";
++		reg = <0>;
++
++		block {
++			compatible = "block-device";
++			partitions {
++				block-partition-env {
++					partname = "u-boot-env";
++
++					nvmem-layout {
++						compatible = "u-boot,env";
++					};
++				};
++
++				block-partition-factory {
++					partname = "factory";
++
++					nvmem-layout {
++						compatible = "fixed-layout";
++						#address-cells = <1>;
++						#size-cells = <1>;
++
++						macaddr_base: macaddr@4000 {
++							compatible = "mac-base";
++							reg = <0x4000 0x6>;
++							#nvmem-cell-cells = <1>;
++						};
++					};
++
++				};
++			};
++		};
++	};
++};
++
++&gmac0 {
++	compatible = "mediatek,eth-mac";
++	reg = <0>;
++	mac-type = "gdm";
++	phy-mode = "2500base-x";
++	status = "okay";
++	nvmem-cells = <&macaddr_base 1>;
++	nvmem-cell-names = "mac-address";
++
++	fixed-link {
++		speed = <2500>;
++		full-duplex;
++		pause;
++	};
++};
++
++&gmac1 {
++	reg = <1>;
++	mac-type = "xgdm";
++	phy-mode = "internal";
++	phy-handle = <&phy15>;
++	status = "okay";
++	nvmem-cells = <&macaddr_base 0>;
++	nvmem-cell-names = "mac-address";
++};
++
++&mdio {
++	#address-cells = <1>;
++	#size-cells = <0>;
++	reset-gpios = <&pio 0 GPIO_ACTIVE_LOW>;
++	reset-delay-us = <10000>;
++	phy15: phy@f {
++		compatible = "ethernet-phy-ieee802.3-c45";
++		reg = <15>;
++		pinctrl-names = "i2p5gbe-led";
++		pinctrl-0 = <&i2p5gbe_led0_pins>;
++		phy-mode = "internal";
++	};
++
++	switch@0 {
++		compatible = "realtek,rtl8366ub";
++		reg = <0>;
++		reset-gpios = <&pio 48 GPIO_ACTIVE_LOW>;
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			port@0 {
++				reg = <0>;
++				label = "lan1";
++				phy-mode = "internal";
++			};
++
++			port@1 {
++				reg = <1>;
++				label = "lan2";
++				phy-mode = "internal";
++			};
++
++			port@17 {
++				reg = <17>;
++				label = "cpu";
++				ethernet = <&gmac0>;
++				phy-mode = "2500base-x";
++
++				fixed-link {
++					speed = <2500>;
++					full-duplex;
++					pause;
++				};
++			};
++		};
++	};
++};
++
++&ssusb {
++	status = "okay";
++};
++
++&tphyu3port0 {
++	status = "okay";
++};
++
++&uart0 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&uart0_pins>;
++	status = "okay";
++};
++
++&infra_bus_prot {
++	status = "okay";
++};
++
++&boottrap {
++	status = "okay";
++};
++
++&trng {
++	status = "okay";
++};
++
++&lvts {
++	status = "okay";
++};
+diff --git a/target/linux/mediatek/filogic/config-6.18 b/target/linux/mediatek/filogic/config-6.18
+index 4b97822..8010074 100644
+--- a/target/linux/mediatek/filogic/config-6.18
++++ b/target/linux/mediatek/filogic/config-6.18
+@@ -329,6 +329,7 @@ CONFIG_NET_DSA_REALTEK=y
+ CONFIG_NET_DSA_REALTEK_MDIO=y
+ CONFIG_NET_DSA_REALTEK_RTL8366UB=y
+ CONFIG_NET_DSA_TAG_MTK=y
++CONFIG_NET_DSA_TAG_RTL8366UB_8021Q=y
+ CONFIG_NET_EGRESS=y
+ CONFIG_NET_FLOW_LIMIT=y
+ CONFIG_NET_INGRESS=y
+diff --git a/target/linux/mediatek/image/filogic.mk b/target/linux/mediatek/image/filogic.mk
+index 2e287fd..e51821c 100644
+--- a/target/linux/mediatek/image/filogic.mk
++++ b/target/linux/mediatek/image/filogic.mk
+@@ -2033,9 +2033,8 @@ TARGET_DEVICES += glinet_gl-mt3600be
+ define Device/glinet_gl-mt5000
+   DEVICE_VENDOR := GL.iNet
+   DEVICE_MODEL := GL-MT5000
+-  DEVICE_DTS := mt7987a-gl-mt5000
++  DEVICE_DTS := mt7987a-glinet-gl-mt5000
+   DEVICE_DTS_DIR := ../dts
+-  SUPPORTED_DEVICES := glinet,gl-mt5000
+   DEVICE_PACKAGES := mkf2fs blkid blockdev kmod-fs-ext4 mt7987-2p5g-phy-firmware \
+                      kmod-mmc kmod-fs-f2fs kmod-fs-vfat
+   IMAGES += factory.bin

@@ -529,7 +529,7 @@ jobs:
             echo ""
             echo "### 固件内置"
             echo ""
-            echo "- MT5000 设备支持(上游 PR [openwrt#24237](https://github.com/openwrt/openwrt/pull/24237) 移植)"
+            echo "- MT5000 设备支持(上游 PR [openwrt#24237](https://github.com/openwrt/openwrt/pull/24237) 移植 + 审阅反馈修复)"
             echo "- 内核 BTF + XDP_SOCKETS(eBPF CO-RE 前置,daede 可用)"
             echo "- daede 运行前置依赖:kmod 五件套 + v2ray geo 数据 + ca-bundle"
             echo "- autocore 状态页(CPU 型号/频率/温度)"

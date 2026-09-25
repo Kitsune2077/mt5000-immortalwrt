@@ -85,7 +85,7 @@ odhcpd 的默认 O 标志会让客户端以为"还有 DHCPv6 可以问 DNS",徒�
 
 ## 固件内置内容(默认选项下)
 
-- MT5000 设备支持(上游 PR #24237 移植)
+- MT5000 设备支持(上游 PR #24237 移植 + 审阅反馈修复)
 - 默认 LAN `10.0.0.1` / 时区 `Asia/Shanghai` / 简体中文 LuCI
 - autocore 状态页(CPU 型号/频率/温度)
 - 内核 BTF + XDP_SOCKETS(eBPF CO-RE 前置)
@@ -162,6 +162,12 @@ Run workflow 时填写:
 
 - 想跟进 ImmortalWrt master:`iwrt_ref` 填 `master`;设备补丁应用失败时
   Action 会明确报错,需基于 PR #24237 最新 head 重新生成 `patches/0001-*.patch`
+- `patches/0002-*.patch` 是 PR #24237 审阅反馈修复(自 dmsza/openwrt 的
+  `openwrt-main-mt5000` 分支移植):RTL8366UB 默认 VLAN 表清零(默认 PVID 不
+  承载任何数据 VLAN)、CPU 口强制只收 tagged 帧、DSA tag 协议号 32→200(避开
+  上游已占用 id)、mtk_eth_soc 错误路径补 `mtk_unreg_dev()`、DTS 改名
+  `mt7987a-glinet-gl-mt5000` 并补 serial0/stdout-path 等。重新生成 0001 后
+  需同步核对 0002(其 hunk 上下文依赖 0001 生成的文件内容)
 - 改编译配置:编辑 `config/mt5000.seed`(menuconfig 风格种子,defconfig 展开;
   workflow 的输入项会动态覆盖其中的 IP/分区大小/语言)
 - 改首启行为:输入项之外的固化定制放 `files/etc/uci-defaults/`;
@@ -177,6 +183,7 @@ Run workflow 时填写:
 ```
 .github/workflows/build-mt5000.yml   # CI 流程(含 20 个自定义输入)
 patches/0001-*.patch                 # MT5000 设备支持(上游 PR #24237)
+patches/0002-*.patch                 # PR #24237 审阅反馈修复(自 dmsza/openwrt 移植)
 config/mt5000.seed                   # 固件配置种子(基础定制)
 files/etc/uci-defaults/99-clean-apk-feeds  # 首启清理 404 apk 源
 files/etc/uci-defaults/99-ipv6       # 仅 enable_ipv6=true 时由 CI 生成
