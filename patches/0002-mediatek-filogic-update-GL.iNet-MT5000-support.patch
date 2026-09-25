@@ -1,12 +1,11 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Kitsune <km2077@foxmail.com>
-Date: Thu, 25 Dec 2025 12:00:00 +0800
+Date: Fri, 26 Dec 2025 12:00:00 +0800
 Subject: [PATCH] mediatek: filogic: update GL.iNet GL-MT5000 support
 
 Port of the review-feedback changes accumulated on PR openwrt#24237,
 as incorporated by dmsza/openwrt branch openwrt-main-mt5000
-(commit 8461b1b79b "mediatek: filogic: update GL.iNet GL-MT5000
-support", review feedback from @dmtpascoal and @openwrt-ai):
+(commit 8461b1b79b), review feedback from @dmtpascoal and @openwrt-ai:
 
 - rtl8366ub: VLAN 1 default entry no longer carries all member/untag
   ports (member = 0, untag = 0): no data VLAN reachable through the
@@ -18,17 +17,25 @@ support", review feedback from @dmtpascoal and @openwrt-ai):
   from 32 to 200 (out-of-tree tagger; upstream v7.0 already uses
   30-32 and master is at 35 - avoids enum id collision).
 - mtk_eth_soc NAPI patch: call mtk_unreg_dev() on the err_free_dummy
-  path (error handling fix) and correct hunk line counts.
+  path (error handling fix).
 - DTS: rename mt7987a-gl-mt5000.dts -> mt7987a-glinet-gl-mt5000.dts
   (matches the glinet_* DEVICE naming convention), add serial0 alias
-  and stdout-path, fix LED node names (led@N -> led-N, no unit
-  address without reg), drop redundant SUPPORTED_DEVICES.
+  and stdout-path, fix LED node names (led@N -> led-N), drop
+  redundant SUPPORTED_DEVICES.
 - filogic config: explicitly enable CONFIG_NET_DSA_TAG_RTL8366UB_8021Q.
 - generic config: add "# ... is not set" defaults for other targets.
 
-Whitespace/checkpatch reformatting of the rtl8366ub driver patch from
-the upstream update is intentionally NOT carried over; only the
-functional changes are ported.
+IMPORTANT - embedded hunk line counts are updated together with the
+content changes above (rtl8366ub_dsa.c 993->1002, rtl8366ub_switch.c
+430->433, plus the 795-11/795-12 count corrections from upstream
+review). patch(1) honours the declared @@ counts, so inserting lines
+without bumping them silently truncates the generated C files, which
+broke the kernel build ("expected declaration or statement at end of
+input" in rtl8366ub_switch.c).
+
+Whitespace/checkpatch reformatting of the rtl8366ub driver from the
+upstream update is intentionally NOT carried over; only the functional
+changes are ported.
 
 diff --git a/target/linux/generic/config-6.18 b/target/linux/generic/config-6.18
 index b8ca70b..823cf21 100644
@@ -51,9 +58,18 @@ index b8ca70b..823cf21 100644
  # CONFIG_NET_DSA_TAG_SJA1105 is not set
  # CONFIG_NET_DSA_TAG_TRAILER is not set
 diff --git a/target/linux/generic/pending-6.18/795-10-net-dsa-realtek-add-rtl8366ub.patch b/target/linux/generic/pending-6.18/795-10-net-dsa-realtek-add-rtl8366ub.patch
-index 422d9cb..2ef72e6 100644
+index 422d9cb..7e8ab5a 100644
 --- a/target/linux/generic/pending-6.18/795-10-net-dsa-realtek-add-rtl8366ub.patch
 +++ b/target/linux/generic/pending-6.18/795-10-net-dsa-realtek-add-rtl8366ub.patch
+@@ -429,7 +429,7 @@ new file mode 100644
+ index 0000000..c4752f2
+ --- /dev/null
+ +++ b/drivers/net/dsa/realtek/rtl8366ub_dsa.c
+-@@ -0,0 +1,993 @@
++@@ -0,0 +1,1002 @@
+ +// SPDX-License-Identifier: GPL-2.0
+ +/*
+ + * This is a sparsely documented chip, the only viable documentation seems
 @@ -729,6 +729,15 @@ index 0000000..c4752f2
  +        return dev_err_probe(priv->dev, ret,
  +                             "failed to clear CPU VLAN egress overrides\n");
@@ -70,6 +86,15 @@ index 422d9cb..2ef72e6 100644
  +    ret = rtl8366ub_vlan_get_egress_mode(priv, priv->cpu_port,
  +                                         &egress_mode);
  +    if (ret)
+@@ -2813,7 +2822,7 @@ new file mode 100644
+ index 0000000..bf40d83
+ --- /dev/null
+ +++ b/drivers/net/dsa/realtek/rtl8366ub_switch.c
+-@@ -0,0 +1,430 @@
++@@ -0,0 +1,433 @@
+ +// SPDX-License-Identifier: GPL-2.0
+ +
+ +#include <linux/bitfield.h>
 @@ -3207,8 +3216,11 @@ index 0000000..bf40d83
  +int rtl8366ub_switch_init(struct rtl8366ub_priv *priv)
  +{
