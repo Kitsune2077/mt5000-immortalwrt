@@ -31,6 +31,7 @@
 | `lan_ipv6_dhcpv6` | LAN DHCPv6 服务(disabled = 纯 SLAAC;server = 有状态分配) | `disabled` |
 | `lan_ipv6_dns` | 向客户端通告路由器为 IPv6 DNS | `false` |
 | `hostname` | 路由器主机名 | `ImmortalWrt` |
+| `luci_extra_apps` | 集成 LuCI 应用清单 `config/luci-extra.seed`(argon 主题+配置/diskman/openclash/passwall/rclone/ttyd/upnp,全部官方源;含 Go 大件约多 1~2 小时) | `true` |
 | `extra_feeds` | 额外软件源(多个用 `\|` 分隔) | 空 |
 | `extra_packages` | 额外编译进固件的软件包(空格分隔) | 空 |
 
@@ -91,6 +92,10 @@ odhcpd 的默认 O 标志会让客户端以为"还有 DHCPv6 可以问 DNS",徒�
 - 内核 BTF + XDP_SOCKETS(eBPF CO-RE 前置)
 - daede 运行前置依赖全套内置:kmod 五件套 + v2ray geo 数据 + ca-bundle
 - iStore 软件商店
+- LuCI 应用精选清单(`luci_extra_apps`,全部官方源):
+  argon 主题 + luci-app-argon-config、diskman(含 btrfs/lsblk)、openclash、
+  passwall(含 Xray/SingBox/SS-Rust 等全套 INCLUDE)、rclone(含 webui/ng)、
+  ttyd、upnp、luci-compat
 - rootfs 2048MB;首启自动清理会 404 的 apk 源行
 
 `bake_daede=false`(默认)时,刷机后用官方脚本安装代理本体:
@@ -189,10 +194,16 @@ Run workflow 时填写:
 ## 目录结构
 
 ```
-.github/workflows/build-mt5000.yml   # CI 流程(含 20 个自定义输入)
+.github/workflows/build-mt5000.yml   # CI 流程(含 21 个自定义输入)
 patches/0001-*.patch                 # MT5000 设备支持(上游 PR #24237)
 patches/0002-*.patch                 # PR #24237 审阅反馈修复(自 dmsza/openwrt 移植)
 config/mt5000.seed                   # 固件配置种子(基础定制)
+config/luci-extra.seed               # LuCI 应用精选清单(luci_extra_apps 选项控制)
 files/etc/uci-defaults/99-clean-apk-feeds  # 首启清理 404 apk 源
 files/etc/uci-defaults/99-ipv6       # 仅 enable_ipv6=true 时由 CI 生成
 ```
+
+`config/luci-extra.seed` 的维护:这是本固件预置的 LuCI 应用精选清单,已剔除
+由 `enable_store`/`bake_daede`/`luci_flavor` 等选项管理的部分。要增删应用
+直接编辑该文件(包必须存在于官方 ImmortalWrt feeds,否则 sanity check 会
+红牌报出未生效条目)。

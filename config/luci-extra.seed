@@ -1,0 +1,46 @@
+# LuCI extra applications - curated app list for this firmware
+# (argon theme + config, diskman, openclash, passwall, rclone, ttyd, upnp)
+#
+# All packages below are available from the stock ImmortalWrt feeds,
+# no third-party feed is required.
+#
+# Managed elsewhere (do NOT add here):
+#   luci-app-store        -> workflow input enable_store (istore feed)
+#   luci-app-daede*       -> workflow input bake_daede   (daede feed)
+#   luci-i18n-*           -> auto-selected by CONFIG_LUCI_LANG_zh_Hans
+#   luci/mod/lib/base     -> bundled with the luci flavor (full/light)
+#
+# NOTE: passwall INCLUDE_* pull in Go/Rust heavyweights (xray, sing-box,
+# shadowsocks-rust), which add significant build time (~1-2h).
+
+# --- Theme ---
+CONFIG_PACKAGE_luci-theme-argon=y
+# argon companion config app (theme settings in LuCI)
+CONFIG_PACKAGE_luci-app-argon-config=y
+
+# --- Disk management ---
+CONFIG_PACKAGE_luci-app-diskman=y
+CONFIG_PACKAGE_luci-app-diskman_INCLUDE_btrfs_progs=y
+CONFIG_PACKAGE_luci-app-diskman_INCLUDE_lsblk=y
+
+# --- Proxy ---
+CONFIG_PACKAGE_luci-app-openclash=y
+CONFIG_PACKAGE_luci-app-passwall=y
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Haproxy=y
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadowsocks_Rust_Client=y
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadowsocks_Rust_Server=y
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Simple_Obfs=y
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_SingBox=y
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_V2ray_Geoview=y
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_V2ray_Plugin=y
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray=y
+
+# --- Tools ---
+CONFIG_PACKAGE_luci-app-rclone=y
+CONFIG_PACKAGE_luci-app-rclone_INCLUDE_rclone-ng=y
+CONFIG_PACKAGE_luci-app-rclone_INCLUDE_rclone-webui=y
+CONFIG_PACKAGE_luci-app-ttyd=y
+CONFIG_PACKAGE_luci-app-upnp=y
+
+# --- Legacy LuCI API compat (needed by some older apps) ---
+CONFIG_PACKAGE_luci-compat=y

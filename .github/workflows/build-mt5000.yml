@@ -134,6 +134,11 @@ on:
         required: false
         default: ''
         type: string
+      luci_extra_apps:
+        description: '集成 LuCI 应用清单 (config/luci-extra.seed: argon 主题+配置/diskman/openclash/passwall/rclone/ttyd/upnp; 含 Go 大件, 约多 1~2 小时)'
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   build:
@@ -162,6 +167,7 @@ jobs:
       LAN_IPV6_DHCPV6: ${{ github.event.inputs.lan_ipv6_dhcpv6 || 'disabled' }}
       LAN_IPV6_DNS: ${{ github.event.inputs.lan_ipv6_dns || 'false' }}
       HOSTNAME: ${{ github.event.inputs.hostname || 'ImmortalWrt' }}
+      LUCI_EXTRA_APPS: ${{ github.event.inputs.luci_extra_apps }}
       EXTRA_FEEDS: ${{ github.event.inputs.extra_feeds }}
       EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages }}
 
@@ -322,6 +328,11 @@ jobs:
               'CONFIG_PACKAGE_luci-app-dockerman=y' >> .config
           fi
 
+          if [ "$LUCI_EXTRA_APPS" != "false" ] && [ "$LUCI_EXTRA_APPS" != "" ]; then
+            # curated LuCI app list (all stock-feed packages)
+            cat ../config/luci-extra.seed >> .config
+          fi
+
           if [ -n "$EXTRA_PACKAGES" ]; then
             for PKG in $EXTRA_PACKAGES; do
               case "$PKG" in '#'*) continue ;; esac
@@ -341,6 +352,17 @@ jobs:
           fi
           if [ "$BAKE_DAEDE" = "true" ]; then
             grep -qE 'CONFIG_PACKAGE_daed=y' .config || { echo "::error::daed 缺失"; exit 1; }
+          fi
+          if [ "$LUCI_EXTRA_APPS" != "false" ] && [ "$LUCI_EXTRA_APPS" != "" ]; then
+            MISSING_LUCI=""
+            for OPT in $(grep -oE '^CONFIG_PACKAGE_[A-Za-z0-9_.-]+=y' ../config/luci-extra.seed | sed 's/^CONFIG_PACKAGE_//;s/=y$//'); do
+              grep -q "^CONFIG_PACKAGE_${OPT}=y" .config || MISSING_LUCI="$MISSING_LUCI $OPT"
+            done
+            if [ -n "$MISSING_LUCI" ]; then
+              echo "::error::luci-extra 清单中以下条目未生效(基础包名错误或依赖不满足, 请核对 config/luci-extra.seed):$MISSING_LUCI"
+              exit 1
+            fi
+            echo "luci-extra apps: $(grep -cE '^CONFIG_PACKAGE_luci-(app|theme)[A-Za-z0-9_.-]*=y' ../config/luci-extra.seed) entries OK"
           fi
           if [ -n "$EXTRA_PACKAGES" ]; then
             MISSING=""
@@ -503,6 +525,7 @@ jobs:
           [ "$ENABLE_STORE" = "true" ]  && STORE_OPT='已集成'  || STORE_OPT='未集成'
           [ "$BAKE_DAEDE" = "true" ]   && DAEDE_OPT='编入固件(600s 超时补丁)' || DAEDE_OPT='运行时安装(默认)'
           [ "$INCLUDE_DOCKER" = "true" ] && DOCKER_OPT='已集成' || DOCKER_OPT='未集成'
+          if [ "$LUCI_EXTRA_APPS" != "false" ] && [ "$LUCI_EXTRA_APPS" != "" ]; then LUCI_EXTRA_OPT='已集成(argon+配置/diskman/openclash/passwall/rclone/ttyd/upnp)'; else LUCI_EXTRA_OPT='未集成'; fi
           if [ "$PPPOE" = "true" ]; then PPPOE_OPT="已预置 (账号密码不显示)"; else PPPOE_OPT='未预置 (DHCP)'; fi
           if [ "$LUCI_FLAVOR" = "light" ]; then LUCI_OPT='luci-light (精简)'; else LUCI_OPT='luci (完整)'; fi
           if [ "$ENABLE_IPV6" = "true" ]; then
@@ -524,6 +547,7 @@ jobs:
             echo "| 时区 / 语言 | $TIMEZONE / $UI_LANG |"
             echo "| 软件包分区 | ${ROOTFS_SIZE} MB |"
             echo "| LuCI 套件 | $LUCI_OPT |"
+            echo "| LuCI 应用清单 | $LUCI_EXTRA_OPT |"
             echo "| iStore | $STORE_OPT |"
             echo "| daede 代理 | $DAEDE_OPT |"
             echo "| Docker | $DOCKER_OPT |"
@@ -535,6 +559,7 @@ jobs:
             echo ""
             echo "- MT5000 设备支持(上游 PR [openwrt#24237](https://github.com/openwrt/openwrt/pull/24237) 移植 + 审阅反馈修复)"
             echo "- 已在本项目固件之间升级时 sysupgrade 可保留配置(eMMC + platform_copy_config)"
+            echo "- LuCI 应用精选清单(见 config/luci-extra.seed)"
             echo "- 内核 BTF + XDP_SOCKETS(eBPF CO-RE 前置,daede 可用)"
             echo "- daede 运行前置依赖:kmod 五件套 + v2ray geo 数据 + ca-bundle"
             echo "- autocore 状态页(CPU 型号/频率/温度)"
