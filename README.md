@@ -110,7 +110,9 @@ tarball 更替所致,过几天重试或在其 feed 提 issue。
    按需填写上述选项
 3. 约 2.5~3.5 小时后(docker/daede 选项会增加时长),在 Artifacts 下载固件
 4. 刷机:优先用 `*glinet_gl-mt5000-squashfs-sysupgrade.bin`
-   (原厂固件升级页直接刷;或 `sysupgrade -n` 不保留配置)
+   - **从原厂固件过来**:升级页直接上传,或在 SSH 中 `sysupgrade -n`(必须不保留配置)
+   - **已在本项目固件之间升级**:直接上传即可,**会保留配置**(设备补丁已把
+     `glinet,gl-mt5000` 加入 `platform_copy_config()`);要恢复出厂再加 `-n`
 
 ## 产物发布
 
@@ -162,10 +164,16 @@ Run workflow 时填写:
 
 - 想跟进 ImmortalWrt master:`iwrt_ref` 填 `master`;设备补丁应用失败时
   Action 会明确报错,需基于 PR #24237 最新 head 重新生成 `patches/0001-*.patch`
-- `patches/0002-*.patch` 是 PR #24237 审阅反馈修复(自 dmsza/openwrt 的
-  `openwrt-main-mt5000` 分支移植):RTL8366UB 默认 VLAN 表清零(默认 PVID 不
+- 设备补丁分两层:`0001` 是 PR #24237 的原始提交(设备支持本体),
+  `0002` 是该 PR 的**审阅反馈修复**,移植自
+  [dmsza/openwrt](https://github.com/dmsza/openwrt) 分支 `openwrt-main-mt5000`
+  (已对齐到分支最新 commit `102a02f`)。上游分支再更新时优先增补 `0002`,
+  并确认 `0001`+`0002` 能按顺序干净套用到 `iwrt_ref` 基线
+- `patches/0002-*.patch` 的内容:RTL8366UB 默认 VLAN 表清零(默认 PVID 不
   承载任何数据 VLAN)、CPU 口强制只收 tagged 帧、DSA tag 协议号 32→200(避开
-  上游已占用 id)、mtk_eth_soc 错误路径补 `mtk_unreg_dev()`、DTS 改名
+  上游已占用 id)、`795-12` 错误路径只回滚已成功注册的 netdev 并注销
+  device notifier、`platform.sh` 把 `glinet,gl-mt5000` 加入
+  `platform_copy_config()`(eMMC 上 sysupgrade 才会保留配置)、DTS 改名
   `mt7987a-glinet-gl-mt5000` 并补 serial0/stdout-path 等。重新生成 0001 后
   需同步核对 0002(其 hunk 上下文依赖 0001 生成的文件内容)
 - 改编译配置:编辑 `config/mt5000.seed`(menuconfig 风格种子,defconfig 展开;

@@ -231,6 +231,10 @@ jobs:
       - name: Apply MT5000 device patch
         run: |
           cd immortalwrt
+          # 0001 = GL.iNet MT5000 (Brume 3) device support (openwrt PR #24237 head),
+          # 0002 = that PR's review-feedback fixes, ported from dmsza/openwrt
+          # branch openwrt-main-mt5000 @102a02f.  Both are applied in order and
+          # are only known-good for the pinned iwrt_ref baseline.
           for p in ../patches/*.patch; do
             echo "applying $p"
             git apply --check "$p" && git apply "$p" || { echo "::error::$p 应用失败, 基础版本可能已变动; 请改用已知可用基线 f44d1535b4 或重新生成补丁"; exit 1; }
@@ -530,6 +534,7 @@ jobs:
             echo "### 固件内置"
             echo ""
             echo "- MT5000 设备支持(上游 PR [openwrt#24237](https://github.com/openwrt/openwrt/pull/24237) 移植 + 审阅反馈修复)"
+            echo "- 已在本项目固件之间升级时 sysupgrade 可保留配置(eMMC + platform_copy_config)"
             echo "- 内核 BTF + XDP_SOCKETS(eBPF CO-RE 前置,daede 可用)"
             echo "- daede 运行前置依赖:kmod 五件套 + v2ray geo 数据 + ca-bundle"
             echo "- autocore 状态页(CPU 型号/频率/温度)"
