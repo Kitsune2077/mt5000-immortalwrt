@@ -31,6 +31,7 @@
 | `lan_ipv6_dhcpv6` | LAN DHCPv6 服务(disabled = 纯 SLAAC;server = 有状态分配) | `disabled` |
 | `lan_ipv6_dns` | 向客户端通告路由器为 IPv6 DNS | `false` |
 | `hostname` | 路由器主机名 | `ImmortalWrt` |
+| `root_password` | 默认 root 密码(留空保持无密码;仅首启且尚未设密码时写入) | `root` |
 | `luci_extra_apps` | 集成 LuCI 应用清单 `config/luci-extra.seed`(argon 主题+配置/diskman/openclash/rclone/ttyd/upnp,全部官方源;passwall 已注释停用) | `true` |
 | `extra_feeds` | 额外软件源(多个用 `\|` 分隔) | 空 |
 | `extra_packages` | 额外编译进固件的软件包(空格分隔) | 空 |
@@ -90,6 +91,8 @@ odhcpd 的默认 O 标志会让客户端以为"还有 DHCPv6 可以问 DNS",徒�
 
 - MT5000 设备支持(上游 PR #24237 移植 + 审阅反馈修复)
 - 默认 LAN `10.0.0.1` / 时区 `Asia/Shanghai` / 简体中文 LuCI
+- 默认 root 密码 `root`(`root_password` 留空则保持无密码;首启脚本仅在 root
+  尚无密码时写入,保留配置升级**不会**覆盖你已改过的密码)
 - autocore 状态页(CPU 型号/频率/温度)
 - 内核 BTF + XDP_SOCKETS(eBPF CO-RE 前置)
 - daede 运行前置依赖全套内置:kmod 五件套 + v2ray geo 数据 + ca-bundle
@@ -196,7 +199,7 @@ Run workflow 时填写:
 ## 目录结构
 
 ```
-.github/workflows/build-mt5000.yml   # CI 流程(含 21 个自定义输入)
+.github/workflows/build-mt5000.yml   # CI 流程(含 22 个自定义输入)
 patches/0001-*.patch                 # MT5000 设备支持(上游 PR #24237)
 patches/0002-*.patch                 # PR #24237 审阅反馈修复(自 dmsza/openwrt 移植)
 config/mt5000.seed                   # 固件配置种子(基础定制)

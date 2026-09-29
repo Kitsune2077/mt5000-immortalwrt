@@ -124,6 +124,11 @@ on:
         required: false
         default: 'ImmortalWrt'
         type: string
+      root_password:
+        description: '默认 root 密码 (留空则保持无密码; 仅在首启且 root 尚无密码时写入)'
+        required: false
+        default: 'root'
+        type: string
       extra_feeds:
         description: '额外软件源, 多个用 | 分隔, 每个为标准 feeds.conf 行。例: src-git ken https://github.com/kenzok8/openwrt-packages;main'
         required: false
@@ -167,6 +172,7 @@ jobs:
       LAN_IPV6_DHCPV6: ${{ github.event.inputs.lan_ipv6_dhcpv6 || 'disabled' }}
       LAN_IPV6_DNS: ${{ github.event.inputs.lan_ipv6_dns || 'false' }}
       HOSTNAME: ${{ github.event.inputs.hostname || 'ImmortalWrt' }}
+      ROOT_PASSWORD: ${{ github.event.inputs.root_password }}
       LUCI_EXTRA_APPS: ${{ github.event.inputs.luci_extra_apps }}
       EXTRA_FEEDS: ${{ github.event.inputs.extra_feeds }}
       EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages }}
@@ -411,6 +417,22 @@ jobs:
             "uci set system.@system[0].hostname='$HOSTNAME'" \
             'uci commit system' > "$UD/99-hostname"
 
+          # root password (empty input = keep no password; only written when
+          # root has no password yet, so config-keeping sysupgrades never
+          # clobber a password the user has already set; runs at S10-boot,
+          # before dropbear/uhttpd start)
+          if [ -n "$ROOT_PASSWORD" ]; then
+            HASH=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -6 -stdin)
+            printf '%s\n' \
+              '#!/bin/sh' \
+              '# 仅当 root 尚无密码(全新刷机)时写入默认密码;' \
+              '# 保留配置升级时 /etc/shadow 随配置保留, 此脚本不会覆盖已设密码' \
+              "if grep -q '^root::' /etc/shadow; then" \
+              "  sed -i 's|^root::|root:$HASH:|' /etc/shadow" \
+              'fi' \
+              'exit 0' > "$UD/99-root-password"
+          fi
+
           # UI language
           if [ "$UI_LANG" = "zh-cn" ]; then
             printf '%s\n' \
@@ -555,6 +577,13 @@ jobs:
           else
             IPV6_OPT='未启用 (首启脚本不写 IPv6 配置)'
           fi
+          if [ -z "$ROOT_PASSWORD" ]; then
+            ROOTPWD_OPT='无密码'
+            LOGIN_NOTE='账号 root,无密码,请尽快设置'
+          else
+            if [ "$ROOT_PASSWORD" = "root" ]; then ROOTPWD_OPT='root(默认)'; else ROOTPWD_OPT='自定义(不回显)'; fi
+            LOGIN_NOTE="账号 root,密码 $ROOTPWD_OPT,请尽快修改"
+          fi
 
           {
             echo "## ImmortalWrt — GL.iNet MT5000 (Brume 3)"
@@ -575,6 +604,7 @@ jobs:
             echo "| PPPoE | $PPPOE_OPT |"
             echo "| IPv6 | $IPV6_OPT |"
             echo "| 主机名 | $HOSTNAME |"
+            echo "| root 密码 | $ROOTPWD_OPT |"
             echo ""
             echo "### 固件内置"
             echo ""
@@ -594,7 +624,7 @@ jobs:
             echo '   sysupgrade -n /tmp/*.bin   # -n 不保留配置(从原厂升级务必使用)'
             echo '   ```'
             echo "3. 已在 ImmortalWrt:系统「备份/升级」页上传,可保留配置"
-            echo "4. 刷机后访问 http://$LAN_IP (账号 root,无密码,请尽快设置)"
+            echo "4. 刷机后访问 http://$LAN_IP ($LOGIN_NOTE)"
             echo ""
             echo "### daede 代理安装(未编入固件时)"
             echo ""
