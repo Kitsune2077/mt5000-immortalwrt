@@ -48,7 +48,7 @@
 
 | 位置 | 写入的配置 | 对应 wiki 步骤 |
 |---|---|---|
-| WAN 接口 | 删除单独的 `wan6`,改在 `wan` 上 `delegate='1'`(旧版 netifd 另写兼容项 `ipv6='1'`),并清掉 `ip6assign/ip6class/ip6hint/ip6weight` | 1.2 方案A |
+| WAN 接口 | 清掉 `wan` 上的 `ip6assign/ip6class/ip6hint/ip6weight`,写 `delegate='1'`(旧版 netifd 另写兼容项 `ipv6='1'`);DHCP WAN 删除独立 `wan6`,PPPoE 则显式重建 `wan6`(`@wan` + `dhcpv6`) | 1.2 方案A |
 | WAN DHCP | `dhcp.wan.ignore='1'`(WAN 侧不对外提供 DHCP) | 1.2 方案A 第 5 步 |
 | LAN 接口 | `ip6assign`(默认 `64`)、`ip6ifaceid`(默认 `eui64`) | 1.3.1 / 1.3.2 |
 | LAN RA | `ra='server'` + `ra_slaac='1'`,客户端 SLAAC 自动生成地址 | 1.3.3 |
@@ -75,8 +75,10 @@ odhcpd 的默认 O 标志会让客户端以为"还有 DHCPv6 可以问 DNS",徒�
 
 - 需要光猫已开启 IPv6(建议桥接)且宽带**运营商下发 PD 前缀**;拿不到 PD 前缀,
   这套配置无法让内网获得公网 IPv6
-- WAN 侧拨号方式不限:`pppoe=true/false` 都支持(脚本通过 `wan.delegate` 触发
-  内建 IPv6 客户端,PPPoE 下会走 IPv6CP + DHCPv6-PD)
+- WAN 侧拨号方式不限:`pppoe=true/false` 都支持。PPPoE 下脚本会显式建立
+  `wan6`(device `@wan`,proto `dhcpv6`)在 PPP 链路上跑 IPv6CP + DHCPv6-PD
+  (只设 `delegate` 并不会自动起 odhcp6c);DHCP WAN 则删除独立 wan6,由
+  `wan.delegate` 触发内建 IPv6 客户端
 - 本方案面向**主路由**架构,不适用于旁路由
 - 只对**首启**生效:首启脚本执行过后修改 workflow 选项不会改动已刷机的配置,
   重新构建后请用 `sysupgrade -n`(不保留配置)刷入,或在 LuCI 手动改
