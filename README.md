@@ -31,7 +31,7 @@
 | `lan_ipv6_dhcpv6` | LAN DHCPv6 服务(disabled = 纯 SLAAC;server = 有状态分配) | `disabled` |
 | `lan_ipv6_dns` | 向客户端通告路由器为 IPv6 DNS | `false` |
 | `hostname` | 路由器主机名 | `ImmortalWrt` |
-| `luci_extra_apps` | 集成 LuCI 应用清单 `config/luci-extra.seed`(argon 主题+配置/diskman/openclash/passwall/rclone/ttyd/upnp,全部官方源;含 Go 大件约多 1~2 小时) | `true` |
+| `luci_extra_apps` | 集成 LuCI 应用清单 `config/luci-extra.seed`(argon 主题+配置/diskman/openclash/rclone/ttyd/upnp,全部官方源;passwall 已注释停用) | `true` |
 | `extra_feeds` | 额外软件源(多个用 `\|` 分隔) | 空 |
 | `extra_packages` | 额外编译进固件的软件包(空格分隔) | 空 |
 
@@ -94,8 +94,8 @@ odhcpd 的默认 O 标志会让客户端以为"还有 DHCPv6 可以问 DNS",徒�
 - iStore 软件商店
 - LuCI 应用精选清单(`luci_extra_apps`,全部官方源):
   argon 主题 + luci-app-argon-config、diskman(含 btrfs/lsblk)、openclash、
-  passwall(含 Xray/SingBox/SS-Rust 等全套 INCLUDE)、rclone(含 webui/ng)、
-  ttyd、upnp、luci-compat
+  rclone(含 webui/ng)、ttyd、upnp、luci-compat(passwall 已注释停用,
+  需要时去掉 `config/luci-extra.seed` 中的注释即可)
 - rootfs 2048MB;首启自动清理会 404 的 apk 源行
 
 `bake_daede=false`(默认)时,刷机后用官方脚本安装代理本体:

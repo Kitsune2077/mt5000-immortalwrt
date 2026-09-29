@@ -135,7 +135,7 @@ on:
         default: ''
         type: string
       luci_extra_apps:
-        description: '集成 LuCI 应用清单 (config/luci-extra.seed: argon 主题+配置/diskman/openclash/passwall/rclone/ttyd/upnp; 含 Go 大件, 约多 1~2 小时)'
+        description: '集成 LuCI 应用清单 (config/luci-extra.seed: argon 主题+配置/diskman/openclash/rclone/ttyd/upnp; passwall 已注释停用)'
         required: false
         default: true
         type: boolean
@@ -303,6 +303,10 @@ jobs:
 
           if [ "$LUCI_FLAVOR" = "light" ]; then
             printf 'CONFIG_PACKAGE_luci-light=y\n# CONFIG_PACKAGE_luci is not set\n' >> .config
+          else
+            # full 套件必须显式选中: uhttpd / luci-mod-* / bootstrap 主题只由
+            # luci 合集拉起, 缺了它固件里只有 luci-base + apps, 没有Web服务器
+            printf 'CONFIG_PACKAGE_luci=y\n' >> .config
           fi
 
           if [ "$ENABLE_STORE" != "true" ]; then
@@ -345,6 +349,8 @@ jobs:
           echo "=== sanity check ==="
           grep -qE 'TARGET_mediatek_filogic_DEVICE_glinet_gl-mt5000=y' .config || { echo "::error::设备目标缺失"; exit 1; }
           grep -qE 'CONFIG_KERNEL_DEBUG_INFO_BTF=y' .config            || { echo "::error::内核 BTF 缺失"; exit 1; }
+          grep -qE '^CONFIG_PACKAGE_(luci|luci-light)=y' .config      || { echo "::error::LuCI 套件未生效 (luci_flavor)"; exit 1; }
+          grep -qE '^CONFIG_PACKAGE_uhttpd=y' .config                 || { echo "::error::uhttpd 缺失: LuCI 无 Web 服务器, 管理页面将无法访问"; exit 1; }
           grep -q "CONFIG_TARGET_PREINIT_IP=\"$LAN_IP\"" .config       || { echo "::error::LAN IP 未生效"; exit 1; }
           grep -qE "CONFIG_TARGET_ROOTFS_PARTSIZE=$ROOTFS_SIZE" .config || { echo "::error::分区大小未生效"; exit 1; }
           if [ "$ENABLE_STORE" = "true" ]; then
@@ -525,7 +531,7 @@ jobs:
           [ "$ENABLE_STORE" = "true" ]  && STORE_OPT='已集成'  || STORE_OPT='未集成'
           [ "$BAKE_DAEDE" = "true" ]   && DAEDE_OPT='编入固件(600s 超时补丁)' || DAEDE_OPT='运行时安装(默认)'
           [ "$INCLUDE_DOCKER" = "true" ] && DOCKER_OPT='已集成' || DOCKER_OPT='未集成'
-          if [ "$LUCI_EXTRA_APPS" != "false" ] && [ "$LUCI_EXTRA_APPS" != "" ]; then LUCI_EXTRA_OPT='已集成(argon+配置/diskman/openclash/passwall/rclone/ttyd/upnp)'; else LUCI_EXTRA_OPT='未集成'; fi
+          if [ "$LUCI_EXTRA_APPS" != "false" ] && [ "$LUCI_EXTRA_APPS" != "" ]; then LUCI_EXTRA_OPT='已集成(argon+配置/diskman/openclash/rclone/ttyd/upnp; passwall 已注释停用)'; else LUCI_EXTRA_OPT='未集成'; fi
           if [ "$PPPOE" = "true" ]; then PPPOE_OPT="已预置 (账号密码不显示)"; else PPPOE_OPT='未预置 (DHCP)'; fi
           if [ "$LUCI_FLAVOR" = "light" ]; then LUCI_OPT='luci-light (精简)'; else LUCI_OPT='luci (完整)'; fi
           if [ "$ENABLE_IPV6" = "true" ]; then

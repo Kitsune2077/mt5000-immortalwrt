@@ -1,5 +1,5 @@
 # LuCI extra applications - curated app list for this firmware
-# (argon theme + config, diskman, openclash, passwall, rclone, ttyd, upnp)
+# (argon theme + config, diskman, openclash, rclone, ttyd, upnp; passwall commented out)
 #
 # All packages below are available from the stock ImmortalWrt feeds,
 # no third-party feed is required.
