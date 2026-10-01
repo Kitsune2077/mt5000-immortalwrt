@@ -32,6 +32,8 @@ CONFIG_PACKAGE_kmod-sched-bpf=y
 CONFIG_PACKAGE_kmod-veth=y
 CONFIG_PACKAGE_kmod-xdp-sockets-diag=y
 CONFIG_PACKAGE_kmod-nft-tproxy=y
+# honk (doona) UDP NFQUEUE staging (queue 320); harmless otherwise
+CONFIG_PACKAGE_kmod-nft-queue=y
 
 # LuCI simplified Chinese UI (default language set by files/etc/uci-defaults)
 CONFIG_LUCI_LANG_zh_Hans=y

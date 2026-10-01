@@ -22,6 +22,7 @@
 | `luci_flavor` | LuCI 套件(full / light) | `full` |
 | `enable_store` | 集成 iStore 软件商店 | `true` |
 | `bake_daede` | 将 daede(dae/daed)编译进固件 | `false` |
+| `bake_doona` | 编入 doona+honk(daed 归档后的新一代 Web UI + Rust eBPF 引擎;alpha 实验性,与 `bake_daede` 互斥;内核需 >=6.12,两配置档均满足) | `false` |
 | `include_docker` | 集成 Docker + Dockerman 管理界面 | `false` |
 | `pppoe` | 预置 PPPoE 拨号(WAN = eth1) | `false` |
 | `pppoe_username` | PPPoE 宽带账号 | 空 |
@@ -120,6 +121,17 @@ wget -O - https://raw.githubusercontent.com/kenzok8/openwrt-daede/refs/heads/mai
 注意:daede 上游采用滚动源码包,若 CI 在下载 daed 源码时失败,多为上游
 tarball 更替所致,过几天重试或在其 feed 提 issue。
 
+`bake_doona=true` 时改为编入 **doona + honk**(与 `bake_daede` 互斥,默认关闭)。
+这是 daed 归档(2026-09)后 daeuniverse 的新一代组合:doona 是"引擎无关"的静态
+Web UI(当前对接 honk,dae 后续接入同一原生 API),honk 是 Rust 重写的 eBPF
+透明代理引擎(**alpha 实验性**,兼容 dae 配置语法,TC eBPF + UDP NFQUEUE,
+要求内核 >=6.12——两个配置档均满足)。官方不提供 OpenWrt 软件包,构建时从
+Zakkaus/doona 的 release 下载(SHA256 双 pin)经 `files/` overlay 编入:
+`/usr/bin/honk-core` + `/usr/share/doona` + `/etc/honk/`(含 procd 服务)。
+刷机后访问 `http://<LAN_IP>:9527`,首次登录创建管理员;`/etc/honk` 会自动
+加入 sysupgrade 备份。honk 明确不建议生产使用(用户态代码多为 AI 生成、
+未经完整审计),保守选择请继续用 daede。
+
 ## 使用方法
 
 1. 在 GitHub 上新建一个仓库,把本目录全部内容推送上去
@@ -212,6 +224,10 @@ Run workflow 时填写:
   `CONFIG_DEVEL=y` + `CONFIG_CCACHE=y`)
 - 1G 内存设备建议保持 `bake_daede=false` + 运行时安装;若 baking 后 daed
   面板仍慢,可参考局域网编译机 `~/custom-pkgs/` 中的定制包
+- doona/honk 版本跟进:改 workflow `env` 里的 `DOONA_VERSION` 与两个 SHA256
+  (`DOONA_TARBALL_SHA256` / `HONK_CORE_SHA256`,取自对应 release 的 SHA256SUMS);
+  honk-core 用 aarch64-musl(mimalloc)资产,升级换版时注意 init 脚本与配置项
+  是否随上游文档变动(doona-docs 的 OpenWrt 安装/服务管理页)
 
 ## 目录结构
 

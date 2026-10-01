@@ -70,6 +70,11 @@ on:
         required: false
         default: false
         type: boolean
+      bake_doona:
+        description: '编入 doona+honk(daed 归档后的新一代 Web UI + Rust eBPF 引擎, alpha 实验性; 内核需 >=6.12, 与 bake_daede 互斥; 访问 http://LAN_IP:9527)'
+        required: false
+        default: false
+        type: boolean
       include_docker:
         description: '集成 Docker 及 Dockerman 管理界面'
         required: false
@@ -170,6 +175,11 @@ jobs:
       LUCI_FLAVOR: ${{ github.event.inputs.luci_flavor || 'full' }}
       ENABLE_STORE: ${{ github.event.inputs.enable_store }}
       BAKE_DAEDE: ${{ github.event.inputs.bake_daede }}
+      BAKE_DOONA: ${{ github.event.inputs.bake_doona }}
+      # doona/honk pinned release (Zakkaus/doona); bump with both SHA256 below
+      DOONA_VERSION: '0.1.0-beta.12'
+      DOONA_TARBALL_SHA256: '5f11ab90da1794e6f03ff4001af00d35be47e564486f747984f1b3b82e101261'
+      HONK_CORE_SHA256: 'e9ae1d6f27bcc948e6ea32e6267984c2830db94fad274ff5afca169fbf210044'
       INCLUDE_DOCKER: ${{ github.event.inputs.include_docker }}
       PPPOE: ${{ github.event.inputs.pppoe }}
       PPPOE_USERNAME: ${{ github.event.inputs.pppoe_username }}
@@ -232,6 +242,9 @@ jobs:
           fi
           if [ "$PPPOE" = "true" ] && [ -z "$PPPOE_PASSWORD" ] && [ -z "$PPPOE_SECRET" ]; then
             echo "::error::PPPoE 密码为空: 请填写 pppoe_password 或配置仓库 Secret PPPOE_PASSWORD"; exit 1
+          fi
+          if [ "$BAKE_DOONA" = "true" ] && [ "$BAKE_DAEDE" = "true" ]; then
+            echo "::error::bake_doona 与 bake_daede 互斥 (honk 与 dae 同抢 eBPF TC 挂钩, 不能同时运行)"; exit 1
           fi
           if [ "$ENABLE_IPV6" = "true" ]; then
             case "$LAN_IPV6_ASSIGN" in
@@ -584,6 +597,104 @@ jobs:
           chmod 755 "$UD"/99-*
           ls -la "$UD"/
 
+      - name: Bake doona/honk (optional)
+        run: |
+          cd immortalwrt
+          if [ "$BAKE_DOONA" != "true" ]; then
+            echo "bake_doona 未启用, 跳过"
+            exit 0
+          fi
+          BASE="https://github.com/Zakkaus/doona/releases/download/v$DOONA_VERSION"
+
+          # --- download pinned release tarballs (sha256-pinned) ---
+          curl -fL --retry 3 -o /tmp/doona.tgz "$BASE/doona-$DOONA_VERSION.tar.gz"
+          echo "$DOONA_TARBALL_SHA256  /tmp/doona.tgz" | sha256sum -c -
+          curl -fL --retry 3 -o /tmp/honk-core.tgz "$BASE/honk-core-debug-aarch64-unknown-linux-musl.tar.gz"
+          echo "$HONK_CORE_SHA256  /tmp/honk-core.tgz" | sha256sum -c -
+
+          # --- unpack into files/ overlay ---
+          mkdir -p files/usr/share/doona files/usr/bin files/etc/honk/config.d files/etc/honk/data
+          # doona tarball 顶层为 ./, 直接解入目标目录
+          tar -xzf /tmp/doona.tgz -C files/usr/share/doona
+          mkdir -p /tmp/honk-extract
+          tar -xzf /tmp/honk-core.tgz --strip-components=1 -C /tmp/honk-extract
+          install -m 0755 /tmp/honk-extract/honk-core files/usr/bin/honk-core
+
+          # --- honk main config (dae 语法; wan=auto 跟随默认路由, lan=br-lan) ---
+          cat > files/etc/honk/config.dae <<'EOF'
+          include {
+              config.d/*.dae
+          }
+
+          global {
+              wan_interface: auto
+              lan_interface: br-lan
+              data_dir: '/etc/honk/data'
+              bootstrap_resolver: '127.0.0.1:53'
+          }
+
+          routing {
+              fallback: direct
+          }
+          EOF
+
+          # --- native API (doona 后端): http://LAN_IP:9527, 首次登录时创建管理员 ---
+          mkdir -p files/etc/honk/config.d
+          cat > files/etc/honk/config.d/api.dae <<EOF
+          experimental {
+              native_api {
+                  enabled: true
+                  listen: '$LAN_IP:9527'
+                  password_auth: true
+                  config_write: true
+                  ui: '/usr/share/doona'
+              }
+          }
+          EOF
+
+          # --- procd 服务 (per doona docs service-management; mimalloc 版必须带
+          #     MIMALLOC_PURGE_DELAY=0, 及时向系统归还内存) ---
+          cat > files/etc/init.d/honk-core <<'EOF'
+          #!/bin/sh /etc/rc.common
+
+          START=99
+          STOP=10
+          USE_PROCD=1
+
+          start_service() {
+              procd_open_instance
+              procd_set_param command /usr/bin/honk-core --config /etc/honk/config.dae --data-dir /etc/honk/data --disable-timestamp
+              procd_set_param limits nofile="1048576 1048576"
+              procd_set_param env MIMALLOC_PURGE_DELAY=0
+              procd_set_param respawn
+              procd_set_param stdout 1
+              procd_set_param stderr 1
+              procd_close_instance
+          }
+
+          reload_service() {
+              /usr/bin/honk-core reload
+          }
+          EOF
+          chmod 0755 files/etc/init.d/honk-core
+
+          # --- /etc/honk 加入 sysupgrade 备份 (首启追加, 幂等) ---
+          UD=files/etc/uci-defaults
+          mkdir -p "$UD"
+          cat > "$UD/99-honk-sysupgrade" <<'EOF'
+          #!/bin/sh
+          grep -q '^/etc/honk/' /etc/sysupgrade.conf 2>/dev/null || \
+              printf '%s\n' '/etc/honk/' >> /etc/sysupgrade.conf
+          exit 0
+          EOF
+          chmod 755 "$UD/99-honk-sysupgrade"
+
+          # --- sanity: UI 有 index.html, 二进制就位 ---
+          [ -f files/usr/share/doona/index.html ] || { echo "::error::doona 前端 index.html 缺失 (上游布局变动?)"; exit 1; }
+          file files/usr/bin/honk-core 2>/dev/null || true
+          ls -lh files/usr/bin/honk-core
+          echo "doona/honk v$DOONA_VERSION baked"
+
       - name: Download sources
         run: |
           cd immortalwrt
@@ -606,6 +717,7 @@ jobs:
           [ -n "$SYS" ] || SYS="(见附件)"
           [ "$ENABLE_STORE" = "true" ]  && STORE_OPT='已集成'  || STORE_OPT='未集成'
           [ "$BAKE_DAEDE" = "true" ]   && DAEDE_OPT='编入固件(600s 超时补丁)' || DAEDE_OPT='运行时安装(默认)'
+          if [ "$BAKE_DOONA" = "true" ]; then DOONA_OPT="已编入 (doona + honk v$DOONA_VERSION, alpha 实验性)"; else DOONA_OPT='未编入'; fi
           [ "$INCLUDE_DOCKER" = "true" ] && DOCKER_OPT='已集成' || DOCKER_OPT='未集成'
           if [ "$LUCI_EXTRA_APPS" != "false" ] && [ "$LUCI_EXTRA_APPS" != "" ]; then LUCI_EXTRA_OPT='已集成(argon+配置/diskman/openclash/rclone/ttyd/upnp; passwall 已注释停用)'; else LUCI_EXTRA_OPT='未集成'; fi
           if [ "$PPPOE" = "true" ]; then PPPOE_OPT="已预置 (账号密码不显示)"; else PPPOE_OPT='未预置 (DHCP)'; fi
@@ -639,6 +751,7 @@ jobs:
             echo "| LuCI 应用清单 | $LUCI_EXTRA_OPT |"
             echo "| iStore | $STORE_OPT |"
             echo "| daede 代理 | $DAEDE_OPT |"
+            echo "| doona/honk | $DOONA_OPT |"
             echo "| Docker | $DOCKER_OPT |"
             echo "| PPPoE | $PPPOE_OPT |"
             echo "| IPv6 | $IPV6_OPT |"
@@ -665,11 +778,19 @@ jobs:
             echo "3. 已在 ImmortalWrt:系统「备份/升级」页上传,可保留配置"
             echo "4. 刷机后访问 http://$LAN_IP ($LOGIN_NOTE)"
             echo ""
-            echo "### daede 代理安装(未编入固件时)"
-            echo ""
-            echo '   ```'
-            echo '   wget -O - https://raw.githubusercontent.com/kenzok8/openwrt-daede/refs/heads/main/scripts/install.sh | ash'
-            echo '   ```'
+            if [ "$BAKE_DOONA" = "true" ]; then
+              echo "### doona / honk (已编入)"
+              echo ""
+              echo "- 刷机后访问 http://$LAN_IP:9527 打开 doona, 首次登录时创建管理员账户"
+              echo "- honk 为 alpha 实验性引擎, 不建议生产使用; 配置与数据在 /etc/honk (已加入 sysupgrade 备份)"
+              echo "- 依赖已内置: kmod-veth / kmod-nft-queue / kmod-sched-core / ca-bundle"
+            else
+              echo "### daede 代理安装(未编入固件时)"
+              echo ""
+              echo '   ```'
+              echo '   wget -O - https://raw.githubusercontent.com/kenzok8/openwrt-daede/refs/heads/main/scripts/install.sh | ash'
+              echo '   ```'
+            fi
             echo ""
             echo "> 完整校验值见附件 sha256sums;软件清单见 *.manifest;构建配置见 config.buildinfo"
           } > release_notes.md
