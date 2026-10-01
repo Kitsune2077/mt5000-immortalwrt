@@ -483,7 +483,10 @@ jobs:
           fi
 
           # IPv6 (参考 Aethersailor/Custom_OpenClash_Rules wiki "OpenWrt IPv6 设置方案")
-          #   WAN: DHCP 型删独立 wan6 交给 wan.delegate; PPPoE 需显式 wan6(@wan, dhcpv6)
+          #   WAN 侧两种拨号的 PD 机制不同:
+          #   PPPoE    -> ppp6-up 以 AUTOIPV6 自动生成动态 wan_6 (dhcpv6+PD),
+          #               前提是 wan.ipv6 留空/auto (显式 ipv6=1 会禁用它)
+          #   DHCP WAN -> proto dhcp 不会自动生成 wan_6, 需显式 wan6 承载 PD
           #   LAN: 从上游委派前缀中划分子网, RA 服务器 + SLAAC 下发, 关闭 NDP 代理
           if [ "$ENABLE_IPV6" = "true" ]; then
             IU="$UD/99-ipv6"
@@ -492,28 +495,37 @@ jobs:
               '# IPv6 per Aethersailor/Custom_OpenClash_Rules wiki (OpenWrt IPv6 设置方案)' \
               "# 生成参数: ip6assign=$LAN_IPV6_ASSIGN ip6ifaceid=$LAN_IPV6_SUFFIX dhcpv6=$LAN_IPV6_DHCPV6 ipv6_dns=$LAN_IPV6_DNS" \
               '' \
-              '# --- WAN: 启用内建 IPv6 管理 + 委托上游前缀 ---' \
+              '# --- WAN: 委托上游前缀 (netifd 核心默认已开, 显式写明以对齐教程) ---' \
               "uci -q set network.wan.delegate='1'" \
-              "uci -q set network.wan.ipv6='1'" \
+              '# 关键: wan.ipv6 必须留空/auto。ppp.sh 只在留空或 auto 时设 AUTOIPV6,' \
+              '# 显式 ipv6=1 只做 IPv6CP、不会自动生成动态 wan_6 (旧脚本 r9 上' \
+              '# wan_6 缺失的根因), 故必须删掉它 (含保留配置升级时的残留)' \
+              'uci -q delete network.wan.ipv6' \
               'uci -q delete network.wan.ip6assign' \
               'uci -q delete network.wan.ip6class' \
               'uci -q delete network.wan.ip6hint' \
               'uci -q delete network.wan.ip6weight' \
               '[ -n "$(uci -q get dhcp.wan)" ] && uci -q set dhcp.wan.ignore=1' > "$IU"
             if [ "$PPPOE" = "true" ]; then
-              # PPPoE: PPP 链路上的 DHCPv6 必须由显式 wan6(@wan) 承载, 只设
-              # delegate 不会自动起 odhcp6c (r9 实测 wan_6 接口未生成)
+              # PPPoE: ipv6 留空 -> pppd IPv6CP up 后 ppp6-up 自动创建动态 wan_6
+              # (proto dhcpv6, ifname @wan, PD 默认开启), 即教程方案A 的行为;
+              # 删除静态 wan6 (出厂默认或旧固件手动残留), 避免与 wan_6 双客户端
               printf '%s\n' \
                 '' \
-                '# --- PPPoE: 在 PPP 链路上显式建立 DHCPv6 客户端 (wan6 @ wan) ---' \
-                "uci -q set network.wan6=interface" \
-                "uci -q set network.wan6.device='@wan'" \
+                '# --- PPPoE: 依赖自动生成的动态 wan_6 (dhcpv6 客户端 + PD) ---' \
+                'uci -q delete network.wan6' >> "$IU"
+            else
+              # DHCP WAN: proto dhcp 没有任何自动生成 wan_6 的机制,
+              # PD 必须由显式 wan6 (dhcpv6 客户端, 与 wan 同端口) 承载 (教程方案B)
+              printf '%s\n' \
+                '' \
+                '# --- DHCP WAN: 确保 wan6 (dhcpv6 客户端) 存在并承载 PD ---' \
+                'uci -q set network.wan6=interface' \
+                'WANDEV=$(uci -q get network.wan.device || uci -q get network.wan.ifname)' \
+                '[ -n "$WANDEV" ] && uci -q set network.wan6.device="$WANDEV"' \
                 "uci -q set network.wan6.proto='dhcpv6'" \
                 "uci -q set network.wan6.reqaddress='try'" \
                 "uci -q set network.wan6.reqprefix='auto'" >> "$IU"
-            else
-              # DHCP WAN: 独立 wan6 会重复请求 PD, 交给 wan 自身 delegate 处理
-              printf '%s\n' 'uci -q delete network.wan6' >> "$IU"
             fi
             printf '%s\n' \
               '' \

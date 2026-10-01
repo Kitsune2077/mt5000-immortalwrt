@@ -50,7 +50,7 @@
 
 | 位置 | 写入的配置 | 对应 wiki 步骤 |
 |---|---|---|
-| WAN 接口 | 清掉 `wan` 上的 `ip6assign/ip6class/ip6hint/ip6weight`,写 `delegate='1'`(旧版 netifd 另写兼容项 `ipv6='1'`);DHCP WAN 删除独立 `wan6`,PPPoE 则显式重建 `wan6`(`@wan` + `dhcpv6`) | 1.2 方案A |
+| WAN 接口 | 清掉 `wan` 上的 `ip6assign/ip6class/ip6hint/ip6weight`,写 `delegate='1'`;**删除 `wan.ipv6`**(该值留空/`auto` 才会触发自动 `wan_6`) | 1.2 方案A |
 | WAN DHCP | `dhcp.wan.ignore='1'`(WAN 侧不对外提供 DHCP) | 1.2 方案A 第 5 步 |
 | LAN 接口 | `ip6assign`(默认 `64`)、`ip6ifaceid`(默认 `eui64`) | 1.3.1 / 1.3.2 |
 | LAN RA | `ra='server'` + `ra_slaac='1'`,客户端 SLAAC 自动生成地址 | 1.3.3 |
@@ -77,15 +77,22 @@ odhcpd 的默认 O 标志会让客户端以为"还有 DHCPv6 可以问 DNS",徒�
 
 - 需要光猫已开启 IPv6(建议桥接)且宽带**运营商下发 PD 前缀**;拿不到 PD 前缀,
   这套配置无法让内网获得公网 IPv6
-- WAN 侧拨号方式不限:`pppoe=true/false` 都支持。PPPoE 下脚本会显式建立
-  `wan6`(device `@wan`,proto `dhcpv6`)在 PPP 链路上跑 IPv6CP + DHCPv6-PD
-  (只设 `delegate` 并不会自动起 odhcp6c);DHCP WAN 则删除独立 wan6,由
-  `wan.delegate` 触发内建 IPv6 客户端
+- WAN 侧拨号方式不限:`pppoe=true/false` 都支持,但两种拨号获取 PD 的机制不同:
+  - **PPPoE**:脚本删除 `wan.ipv6`(留空=auto)后,拨号成功时 ppp 的 `ppp6-up`
+    钩子会**自动生成动态 `wan_6` 接口**(DHCPv6 客户端,挂在 `@wan` 上,
+    PD 默认开启)——即教程 1.2 方案A 描述的行为。早期版本(r9 时代)脚本显式
+    写了 `ipv6='1'`,而 `ppp.sh` 只在 `ipv6` 留空或 `auto` 时才启用自动
+    `wan_6`,显式 `1` 只做 IPv6CP——这正是当时 `wan_6` 不出现、需要手动
+    `wan6` 的根因。脚本同时删除静态 `wan6`(出厂默认或旧固件残留),避免
+    与动态 `wan_6` 形成双 DHCPv6 客户端重复请求 PD
+  - **DHCP WAN**:`proto dhcp` **不会**自动生成 `wan_6`,PD 必须由显式
+    `wan6` 接口(DHCPv6 客户端,与 `wan` 同端口,`reqaddress=try`、
+    `reqprefix=auto`)承载,即教程 1.2 方案B;脚本会确保其存在并规范化选项
 - 本方案面向**主路由**架构,不适用于旁路由
 - 只对**首启**生效:首启脚本执行过后修改 workflow 选项不会改动已刷机的配置,
   重新构建后请用 `sysupgrade -n`(不保留配置)刷入,或在 LuCI 手动改
-- 若把 `iwrt_ref` 换成 2024 年之前的老基线,`delegate` 这个新选项名会被忽略,
-  脚本里同时写入了旧名 `ipv6='1'` 做兼容
+- 老基线兼容:`ipv6` 留空在旧版 netifd 上同样触发自动 `wan_6`(`ppp.sh` 的
+  `autoipv6` 逻辑久已存在),无需额外兼容项
 - 构建时的选项汇总会写进 Release 说明的 `IPv6` 一行,方便回溯某个固件用了哪套参数
 
 ## 固件内置内容(默认选项下)
