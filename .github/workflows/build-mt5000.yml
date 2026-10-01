@@ -157,6 +157,11 @@ on:
         required: false
         default: true
         type: boolean
+      enable_quickstart:
+        description: '集成 luci-app-quickstart (iStoreOS 风格首页/向导; 自动带入 nas/nas-luci 源, 依赖 iStore 与磁盘工具链, 约增加十几 MB)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   build:
@@ -193,6 +198,7 @@ jobs:
       HOSTNAME: ${{ github.event.inputs.hostname || 'ImmortalWrt' }}
       ROOT_PASSWORD: ${{ github.event.inputs.root_password }}
       LUCI_EXTRA_APPS: ${{ github.event.inputs.luci_extra_apps }}
+      ENABLE_QUICKSTART: ${{ github.event.inputs.enable_quickstart }}
       EXTRA_FEEDS: ${{ github.event.inputs.extra_feeds }}
       EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages }}
 
@@ -296,8 +302,15 @@ jobs:
         run: |
           cd immortalwrt
           cp -r ../files/. ./
-          if [ "$ENABLE_STORE" = "true" ]; then
+          if [ "$ENABLE_STORE" = "true" ] || [ "$ENABLE_QUICKSTART" = "true" ]; then
+            # luci-app-quickstart 硬依赖 luci-app-store, 故 quickstart 也需要 istore 源
             echo 'src-git istore https://github.com/linkease/istore;main' >> feeds.conf.default
+          fi
+          if [ "$ENABLE_QUICKSTART" = "true" ]; then
+            # quickstart 首页: 核心包(预编译二进制, 仅 x86_64/aarch64/arm)在
+            # nas-packages; LuCI 前端 luci-app-quickstart 在 nas-packages-luci
+            echo 'src-git nas https://github.com/linkease/nas-packages;master' >> feeds.conf.default
+            echo 'src-git nasluci https://github.com/linkease/nas-packages-luci;main' >> feeds.conf.default
           fi
           if [ "$BAKE_DAEDE" = "true" ]; then
             echo 'src-git daede https://github.com/kenzok8/openwrt-daede' >> feeds.conf.default
@@ -312,8 +325,12 @@ jobs:
           fi
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-          if [ "$ENABLE_STORE" = "true" ]; then
+          if [ "$ENABLE_STORE" = "true" ] || [ "$ENABLE_QUICKSTART" = "true" ]; then
             ./scripts/feeds install -d y -p istore luci-app-store
+          fi
+          if [ "$ENABLE_QUICKSTART" = "true" ]; then
+            ./scripts/feeds install -f -p nas quickstart
+            ./scripts/feeds install -f -p nasluci luci-app-quickstart
           fi
           if [ "$BAKE_DAEDE" = "true" ]; then
             # resolve name conflicts with packages feed, then force-install daede feed versions
@@ -359,6 +376,12 @@ jobs:
             sed -i 's|^CONFIG_PACKAGE_luci-app-store=y|# CONFIG_PACKAGE_luci-app-store is not set|' .config
           fi
 
+          if [ "$ENABLE_QUICKSTART" = "true" ]; then
+            # quickstart 首页/向导 (iStoreOS 风格); 核心包 quickstart 与
+            # luci-app-store 由 defconfig 依依赖链自动选中
+            printf 'CONFIG_PACKAGE_luci-app-quickstart=y\n' >> .config
+          fi
+
           if [ "$BAKE_DAEDE" = "true" ]; then
             printf 'CONFIG_PACKAGE_luci-app-daede=y\nCONFIG_PACKAGE_luci-app-daede_daed=y\nCONFIG_PACKAGE_daed=y\n' >> .config
           fi
@@ -401,6 +424,10 @@ jobs:
           grep -qE "CONFIG_TARGET_ROOTFS_PARTSIZE=$ROOTFS_SIZE" .config || { echo "::error::分区大小未生效"; exit 1; }
           if [ "$ENABLE_STORE" = "true" ]; then
             grep -qE 'CONFIG_PACKAGE_luci-app-store=y' .config || { echo "::error::iStore 缺失"; exit 1; }
+          fi
+          if [ "$ENABLE_QUICKSTART" = "true" ]; then
+            grep -qE 'CONFIG_PACKAGE_luci-app-quickstart=y' .config || { echo "::error::luci-app-quickstart 缺失 (nasluci feed 安装失败?)"; exit 1; }
+            grep -qE 'CONFIG_PACKAGE_quickstart=y' .config || { echo "::error::quickstart 核心包缺失 (依赖或架构 aarch64 不满足?)"; exit 1; }
           fi
           if [ "$BAKE_DAEDE" = "true" ]; then
             grep -qE 'CONFIG_PACKAGE_daed=y' .config || { echo "::error::daed 缺失"; exit 1; }
@@ -720,6 +747,7 @@ jobs:
           if [ "$BAKE_DOONA" = "true" ]; then DOONA_OPT="已编入 (doona + honk v$DOONA_VERSION, alpha 实验性)"; else DOONA_OPT='未编入'; fi
           [ "$INCLUDE_DOCKER" = "true" ] && DOCKER_OPT='已集成' || DOCKER_OPT='未集成'
           if [ "$LUCI_EXTRA_APPS" != "false" ] && [ "$LUCI_EXTRA_APPS" != "" ]; then LUCI_EXTRA_OPT='已集成(argon+配置/diskman/openclash/rclone/ttyd/upnp; passwall 已注释停用)'; else LUCI_EXTRA_OPT='未集成'; fi
+          if [ "$ENABLE_QUICKSTART" = "true" ]; then QS_OPT='已集成 (iStoreOS 风格首页/向导)'; else QS_OPT='未集成'; fi
           if [ "$PPPOE" = "true" ]; then PPPOE_OPT="已预置 (账号密码不显示)"; else PPPOE_OPT='未预置 (DHCP)'; fi
           if [ "$LUCI_FLAVOR" = "light" ]; then LUCI_OPT='luci-light (精简)'; else LUCI_OPT='luci (完整)'; fi
           if [ "$ENABLE_IPV6" = "true" ]; then
@@ -749,6 +777,7 @@ jobs:
             echo "| 软件包分区 | ${ROOTFS_SIZE} MB |"
             echo "| LuCI 套件 | $LUCI_OPT |"
             echo "| LuCI 应用清单 | $LUCI_EXTRA_OPT |"
+            echo "| quickstart 首页 | $QS_OPT |"
             echo "| iStore | $STORE_OPT |"
             echo "| daede 代理 | $DAEDE_OPT |"
             echo "| doona/honk | $DOONA_OPT |"

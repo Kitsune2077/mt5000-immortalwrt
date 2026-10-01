@@ -35,6 +35,7 @@
 | `hostname` | 路由器主机名 | `ImmortalWrt` |
 | `root_password` | 默认 root 密码(留空保持无密码;仅首启且尚未设密码时写入) | `root` |
 | `luci_extra_apps` | 集成 LuCI 应用清单 `config/luci-extra.seed`(argon 主题+配置/diskman/openclash/rclone/ttyd/upnp,全部官方源;passwall 已注释停用) | `true` |
+| `enable_quickstart` | 集成 luci-app-quickstart 首页/向导(iStoreOS 风格;自动带入 linkease nas/nas-luci 源,硬依赖 iStore 与磁盘工具链 e2fsprogs/parted/smartmontools 等,约增加十几 MB;核心为 aarch64 预编译二进制) | `false` |
 | `extra_feeds` | 额外软件源(多个用 `\|` 分隔) | 空 |
 | `extra_packages` | 额外编译进固件的软件包(空格分隔) | 空 |
 
@@ -106,6 +107,8 @@ odhcpd 的默认 O 标志会让客户端以为"还有 DHCPv6 可以问 DNS",徒�
 - 内核 BTF + XDP_SOCKETS(eBPF CO-RE 前置)
 - daede 运行前置依赖全套内置:kmod 五件套 + v2ray geo 数据 + ca-bundle
 - iStore 软件商店
+- `enable_quickstart=true` 时额外编入 **luci-app-quickstart**(iStoreOS 风格首页/
+  网络向导,见选项表;LuCI 菜单进入「向导」/Quickstart,也可自行设为默认首页)
 - LuCI 应用精选清单(`luci_extra_apps`,全部官方源):
   argon 主题 + luci-app-argon-config、diskman(含 btrfs/lsblk)、openclash、
   rclone(含 webui/ng)、ttyd、upnp、luci-compat(passwall 已注释停用,
@@ -182,6 +185,8 @@ Run workflow 时填写:
 | `src-git ken https://github.com/kenzok8/openwrt-packages;main` | 常用 LuCI 插件合集(去广告/多播/网易云等) |
 | `src-git daede https://github.com/kenzok8/openwrt-daede` | dae/daed 代理(勾选 bake_daede 已内置此源) |
 | `src-git istore https://github.com/linkease/istore;main` | iStore 商店(enable_store 已内置) |
+| `src-git nas https://github.com/linkease/nas-packages;master` | iStoreOS NAS 包(quickstart 核心二进制,enable_quickstart 已内置) |
+| `src-git nasluci https://github.com/linkease/nas-packages-luci;main` | iStoreOS LuCI 应用(luci-app-quickstart 等,enable_quickstart 已内置) |
 
 ### 注意事项
 
@@ -232,7 +237,7 @@ Run workflow 时填写:
 ## 目录结构
 
 ```
-.github/workflows/build-mt5000.yml   # CI 流程(含 23 个自定义输入)
+.github/workflows/build-mt5000.yml   # CI 流程(含 25 个自定义输入)
 patches/0001-*.patch                 # MT5000 设备支持(上游 PR #24237, master 基线)
 patches/0002-*.patch                 # PR #24237 审阅反馈修复(自 dmsza/openwrt 移植, master 基线)
 patches-25.12/0001-*.patch           # MT5000 设备支持 25.12 回移(自 dmsza/openwrt e4415712, 含审阅修复)
