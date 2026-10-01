@@ -13,7 +13,8 @@
 
 | 选项 | 说明 | 默认值 |
 |---|---|---|
-| `iwrt_ref` | ImmortalWrt 基础版本(commit/tag/branch) | `f44d1535b4`(已知可用) |
+| `iwrt_profile` | 基础版本配置档:master=滚动快照(内核 6.18)/25.12=稳定版(内核 6.12) | `master` |
+| `iwrt_ref` | ImmortalWrt 基础版本(commit/tag/branch,留空则按 profile 取默认基线) | 空 |
 | `lan_ip` | 默认 LAN IP(含 failsafe IP) | `10.0.0.1` |
 | `timezone` | 时区(上海/香港/台北/东京/新加坡/柏林/UTC) | `Asia/Shanghai` |
 | `ui_lang` | LuCI 界面语言(zh-cn / en) | `zh-cn` |
@@ -172,6 +173,15 @@ Run workflow 时填写:
 
 ## 维护说明
 
+- **配置档与基线**:`iwrt_profile=master`(默认)使用快照基线 `f44d1535b4`(内核 6.18,
+  补丁在 `patches/`);`iwrt_profile=25.12` 使用稳定版基线 `v25.12.2`(内核 6.12,
+  补丁在 `patches-25.12/`)。`iwrt_ref` 显式填写时优先,但需自行确保对应补丁能套用。
+  跟进上游时:master 改基线需重验 `patches/0001+0002`;25.12 可跟进新 tag(如
+  `v25.12.3`)或 dmsza 上游分支更新,补丁套用失败时 Action 会明确报错,基于新基线
+  重新生成 `patches-25.12/0001-*.patch` 即可(源自
+  [dmsza/openwrt](https://github.com/dmsza/openwrt) 的 `[25.12]` 回移 commit
+  `e4415712`;为适配 ImmortalWrt v25.12.2 已剔除仅涉及 jiorouter 设备的 hunk,
+  其终态在 ImmortalWrt 上游已存在)
 - 想跟进 ImmortalWrt master:`iwrt_ref` 填 `master`;设备补丁应用失败时
   Action 会明确报错,需基于 PR #24237 最新 head 重新生成 `patches/0001-*.patch`
 - 设备补丁分两层:`0001` 是 PR #24237 的原始提交(设备支持本体),
@@ -199,9 +209,10 @@ Run workflow 时填写:
 ## 目录结构
 
 ```
-.github/workflows/build-mt5000.yml   # CI 流程(含 22 个自定义输入)
-patches/0001-*.patch                 # MT5000 设备支持(上游 PR #24237)
-patches/0002-*.patch                 # PR #24237 审阅反馈修复(自 dmsza/openwrt 移植)
+.github/workflows/build-mt5000.yml   # CI 流程(含 23 个自定义输入)
+patches/0001-*.patch                 # MT5000 设备支持(上游 PR #24237, master 基线)
+patches/0002-*.patch                 # PR #24237 审阅反馈修复(自 dmsza/openwrt 移植, master 基线)
+patches-25.12/0001-*.patch           # MT5000 设备支持 25.12 回移(自 dmsza/openwrt e4415712, 含审阅修复)
 config/mt5000.seed                   # 固件配置种子(基础定制)
 config/luci-extra.seed               # LuCI 应用精选清单(luci_extra_apps 选项控制)
 files/etc/uci-defaults/99-clean-apk-feeds  # 首启清理 404 apk 源
