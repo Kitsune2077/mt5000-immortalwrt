@@ -302,14 +302,6 @@ jobs:
         run: |
           cd immortalwrt
           cp -r ../files/. ./
-          # repo-carried local packages (e.g. luci-theme-glint) go straight
-          # into the buildroot package/ tree (one level, so the scanner
-          # registers them; nested package/local/<pkg> also scans but keeps
-          # stale metadata gotchas around)
-          if [ -d ../packages ]; then
-            cp -r ../packages/. package/
-            echo "carried local packages: $(find package -maxdepth 1 -mindepth 1 -type d -name 'luci-*' | xargs -n1 basename | tr '\n' ' ')"
-          fi
           # luci-app-run (wukongdaily 网页上传/运行安装器) 必装: 源码 feed (注意分支是 master)
           echo 'src-git wkd https://github.com/wukongdaily/luci-app-run;master' >> feeds.conf.default
           if [ "$ENABLE_STORE" = "true" ] || [ "$ENABLE_QUICKSTART" = "true" ]; then
@@ -431,7 +423,6 @@ jobs:
           grep -qE 'CONFIG_PACKAGE_luci-app-run=y' .config             || { echo "::error::luci-app-run 缺失 (wkd feed 安装失败?)"; exit 1; }
           grep -qE '^CONFIG_PACKAGE_(luci|luci-light)=y' .config      || { echo "::error::LuCI 套件未生效 (luci_flavor)"; exit 1; }
           grep -qE '^CONFIG_PACKAGE_uhttpd=y' .config                 || { echo "::error::uhttpd 缺失: LuCI 无 Web 服务器, 管理页面将无法访问"; exit 1; }
-          grep -qE '^CONFIG_PACKAGE_luci-theme-glint=y' .config       || { echo "::error::glint 主题缺失 (package/ 携带失败或依赖不满足)"; exit 1; }
           grep -q "CONFIG_TARGET_PREINIT_IP=\"$LAN_IP\"" .config       || { echo "::error::LAN IP 未生效"; exit 1; }
           grep -qE "CONFIG_TARGET_ROOTFS_PARTSIZE=$ROOTFS_SIZE" .config || { echo "::error::分区大小未生效"; exit 1; }
           if [ "$ENABLE_STORE" = "true" ]; then

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "mimosa-finding-ledger-batch/v1",
+  "batchId": "stop-20261001T141745683Z-6924-4f47dc284c73",
+  "runId": "20261001T141745683Z-6924-4f47dc284c73",
+  "runStatus": "inconclusive",
+  "coverage": {
+    "status": "partial",
+    "reasons": [
+      {
+        "code": "project_check_failed",
+        "stage": "agent-check",
+        "target": ".",
+        "detail": "spawnSync D:\\CodeEnv\\nodejs\\node.exe ETIMEDOUT",
+        "affectsCompletion": true
+      }
+    ]
+  },
+  "source": {
+    "component": "zcode-hook",
+    "operationId": "Stop"
+  },
+  "revision": "63b3660db7b054992f480638bbd8bd84f34c4969",
+  "diffHash": "385267583a89456feedcdc9bd1a8aa72dfce926944703cd0725e1d6ce4063994",
+  "rulesVersion": "unavailable",
+  "sessionHash": "3c49c69dc7958927138577c5c70e1787c17b7aef606dd2caa5c7c543da4ff369",
+  "reportRef": ".mimosa/reports/task-review-sess_fcfce9f2-593c-477d-954b-9772006ac91b-20261001T141745683Z-6924-4f47dc284c73.json",
+  "events": [],
+  "observedFindingIds": [],
+  "verifiedFiles": [
+    {
+      "file": "packages/luci-theme-glint/htdocs/luci-static/resources/menu-glint.js",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "packages/luci-theme-glint/htdocs/luci-static/resources/view/glint/sysauth.js",
+      "direct": "complete",
+      "projectContext": "partial"
+    }
+  ],
+  "recordedAt": "2026-10-01T14:17:46.434Z"
+}

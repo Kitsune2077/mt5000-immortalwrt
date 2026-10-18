@@ -38,13 +38,6 @@ CONFIG_PACKAGE_kmod-nft-queue=y
 # LuCI simplified Chinese UI (default language set by files/etc/uci-defaults)
 CONFIG_LUCI_LANG_zh_Hans=y
 
-# Glint theme (repo-carried local package: packages/luci-theme-glint)
-# light sidebar theme inspired by the GL.iNet 4.x look; made default by its
-# uci-defaults script, argon (from luci-extra.seed) stays selectable
-CONFIG_PACKAGE_luci-theme-glint=y
-# Glint theme settings page (login background mode + accent color)
-CONFIG_PACKAGE_luci-app-glint-config=y
-
 # Status page: CPU model / freq / temperature (ImmortalWrt specific)
 CONFIG_PACKAGE_autocore=y
 

@@ -1,0 +1,87 @@
+#!/bin/sh
+# build-glint-apk.sh - build the Glint theme packages with the ImmortalWrt
+# master SDK (produces .apk, matching ImmortalWrt snapshot/master firmware).
+#
+# Usage (any Linux x86_64 host with internet):
+#   1. copy this repo (at least scripts/ + packages/) to the build host
+#   2. bash scripts/build-glint-apk.sh
+#   3. install on the router:
+#        scp dist/sdk-build/sdk/bin/packages/*/local/luci-*.apk root@<router>:/tmp/
+#        ssh root@<router>
+#        apk add --allow-untrusted /tmp/luci-theme-glint-*.apk
+#        apk add --allow-untrusted /tmp/luci-app-glint-config-*.apk
+#
+# The packages are architecture-independent (PKGARCH:=all); the SDK target
+# only determines the toolchain used to build their luci-base dependencies.
+set -e
+
+REPO=$(cd "$(dirname "$0")/.." && pwd)
+WORK=${WORK:-"$REPO/dist/sdk-build"}
+MIRROR=${MIRROR:-https://downloads.immortalwrt.org}
+TARGET=mediatek/filogic
+
+check_deps() {
+	missing=""
+	for c in curl tar xz make gcc g++ perl python3 unzip git find; do
+		command -v "$c" >/dev/null 2>&1 || missing="$missing $c"
+	done
+	[ -z "$missing" ] || {
+		echo "缺少构建依赖:$missing"
+		echo "  Debian/Ubuntu: sudo apt-get install -y build-essential curl xz-utils git perl python3 unzip"
+		echo "  RHEL/Rocky:    sudo dnf install -y gcc gcc-c++ make curl xz git perl python3 unzip"
+		echo "  Arch:          sudo pacman -S base-devel curl xz git perl python unzip"
+		exit 1
+	}
+}
+
+fetch_sdk() {
+	mkdir -p "$WORK"
+	cd "$WORK"
+	echo "== 查询 ImmortalWrt snapshot SDK ($TARGET) =="
+	FILE=$(curl -fsSL "$MIRROR/snapshots/targets/$TARGET/" \
+		| grep -oE 'immortalwrt-sdk-[A-Za-z0-9._-]+-linux-x86_64\.tar\.xz' \
+		| head -n1)
+	[ -n "$FILE" ] || { echo "错误: 无法从 $MIRROR 获取 SDK 文件名"; exit 1; }
+	echo "== $FILE =="
+	[ -f "$FILE" ] || curl -fLLO "$MIRROR/snapshots/targets/$TARGET/$FILE"
+	if [ ! -d sdk ]; then
+		mkdir sdk
+		tar -xf "$FILE" -C sdk --strip-components=1
+	fi
+}
+
+build_pkgs() {
+	cd "$WORK/sdk"
+
+	# theme packages only need luci-base + the packages feed for deps
+	./scripts/feeds update packages luci
+	./scripts/feeds install luci-base
+
+	mkdir -p package/local
+	rm -rf package/local/luci-theme-glint package/local/luci-app-glint-config
+	cp -r "$REPO/packages/luci-theme-glint" package/local/
+	cp -r "$REPO/packages/luci-app-glint-config" package/local/
+
+	if ! grep -q '^CONFIG_PACKAGE_luci-theme-glint=' .config 2>/dev/null; then
+		printf '%s\n' \
+			'CONFIG_PACKAGE_luci-theme-glint=m' \
+			'CONFIG_PACKAGE_luci-app-glint-config=m' >> .config
+		make defconfig >/dev/null 2>&1
+	fi
+
+	make package/luci-theme-glint/compile -j"$(nproc)" V=s
+	make package/luci-app-glint-config/compile -j"$(nproc)" V=s
+
+	echo
+	echo "=== 打包完成,产物: ==="
+	find bin/packages -type f -name 'luci-*glint*' -exec ls -lh {} \;
+	echo
+	echo "=== 安装到路由器(ImmortalWrt master/apk 固件) ==="
+	echo "  scp \$(find bin/packages -name 'luci-*glint*') root@<路由器IP>:/tmp/"
+	echo "  apk add --allow-untrusted /tmp/luci-theme-glint-*.apk"
+	echo "  apk add --allow-untrusted /tmp/luci-app-glint-config-*.apk"
+}
+
+check_deps
+fetch_sdk
+build_pkgs

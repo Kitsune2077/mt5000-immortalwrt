@@ -103,19 +103,6 @@ odhcpd 的默认 O 标志会让客户端以为"还有 DHCPv6 可以问 DNS",徒�
 - 默认 LAN `10.0.0.1` / 时区 `Asia/Shanghai` / 简体中文 LuCI
 - 默认 root 密码 `root`(`root_password` 留空则保持无密码;首启脚本仅在 root
   尚无密码时写入,保留配置升级**不会**覆盖你已改过的密码)
-- **Glint 主题**(仓库自带 `packages/luci-theme-glint`):对齐 GL.iNet 4.x
-  管理面板的观感——**深色外壳**(近黑侧边栏 + 顶栏,两种配色下保持深色) +
-  浅色卡片内容区 + 青色强调,深色模式跟随系统 `prefers-color-scheme`;
-  顶栏右侧内置 **GL 式快捷按钮**(概览/软件包/备份升级/终端(如装了 ttyd)|
-  重启/登出,菜单节点不存在时自动隐藏对应按钮);登录页为 GL 风格:全屏
-  壁纸 + 左侧深色面板 + 玻璃质感输入框,支持 **Bing 每日壁纸**与自定义
-  壁纸 URL(服务端抓取 + 6 小时缓存,离线回退渐变);侧边栏子菜单带
-  展开/折叠动画(系统「减少动态效果」开启时自动禁用)。argon 仍保留,可在
-  「系统 → 外观」切换。原创代码与素材,不含上游任何资产
-- **Glint 个性化设置**(仓库自带 `packages/luci-app-glint-config`):
-  「系统 → Glint 主题 → 个性化设置」,管理登录页背景(渐变/Bing 每日壁纸/
-  自定义壁纸 URL)与主题强调色(青/靛蓝/紫/绿/玫红,写入
-  `/etc/config/glint`,即时生效无需重启)
 - autocore 状态页(CPU 型号/频率/温度)
 - luci-app-run 网页上传/运行安装器(必装, 支持 .run/.sh/.ipk/.apk)
 - 内核 BTF + XDP_SOCKETS(eBPF CO-RE 前置)
@@ -191,8 +178,8 @@ Run workflow 时填写:
 - **软件源**:参考 workflow 中 istore 的写法,在 feeds 步骤把
   `echo 'src-git <名称> <地址>[;分支]' >> feeds.conf.default` 写死
 - 也可以把包源码直接放进仓库 `packages/` 目录随仓库携带(无需外部 feed):
-  workflow 会把 `packages/*` 直挂到构建树 `package/` 下再一起编译
-  (Glint 主题就是这么集成的)
+  workflow 需自行加一段把 `packages/*` 拷入构建树 `package/` 的逻辑
+  (曾经的 Glint 主题就是这种集成方式,现已移除)
 
 ### 常用第三方源示例
 
@@ -210,18 +197,6 @@ Run workflow 时填写:
   限制仅在"刷机后运行时在线安装 kmod"的场景(无匹配内核的在线仓库)
 - 新增的 LuCI 应用会随 `LUCI_LANG_zh_Hans=y` 自动带上中文翻译(如有)
 - Go 类大型插件(如 daed)会显著增加编译时长
-
-### 本地单独打包 Glint 主题(apk)
-
-要在现有固件上直接安装测试主题,可用仓库自带的打包脚本在任意
-Linux x86_64 机器上单独构建(自动下载 ImmortalWrt snapshot SDK):
-
-```
-# 把整个仓库(至少 scripts/ + packages/)拷到构建机后:
-bash scripts/build-glint-apk.sh
-# 产物在 dist/sdk-build/sdk/bin/packages/*/local/,按脚本末尾打印的
-# 命令 scp 到路由器并用 apk add --allow-untrusted 安装
-```
 
 ## 维护说明
 
@@ -271,8 +246,6 @@ patches/0002-*.patch                 # PR #24237 审阅反馈修复(自 dmsza/op
 patches-25.12/0001-*.patch           # MT5000 设备支持 25.12 回移(自 dmsza/openwrt e4415712, 含审阅修复)
 config/mt5000.seed                   # 固件配置种子(基础定制)
 config/luci-extra.seed               # LuCI 应用精选清单(luci_extra_apps 选项控制)
-packages/luci-theme-glint/           # Glint 主题(GL.iNet 风格 LuCI 主题, 仓库自带包)
-packages/luci-app-glint-config/      # Glint 个性化设置页(背景模式/主题色, 仓库自带包)
 files/etc/uci-defaults/99-clean-apk-feeds  # 首启清理 404 apk 源
 files/etc/uci-defaults/99-ipv6       # 仅 enable_ipv6=true 时由 CI 生成
 ```

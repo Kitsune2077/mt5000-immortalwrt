@@ -1,0 +1,53 @@
+'use strict';
+'require ui';
+'require view';
+
+/*
+ * Glint theme login view
+ * Derived from luci-theme-bootstrap sysauth.js (Apache-2.0,
+ * (c) 2022 Jo-Philipp Wich); the modal is styled as a centered
+ * login card by the theme stylesheet.
+ */
+
+return view.extend({
+	render() {
+		const form = document.querySelector('form');
+		const btn = document.querySelector('button');
+
+		const dlg = ui.showModal(
+			_('Authorization Required'),
+			Array.from(document.querySelectorAll('section > *')),
+			'login'
+		);
+
+		dlg.insertBefore(E('div', { class: 'gl-login-brand' }, [
+			E('img', { src: L.env.media + '/logo.svg', alt: '' }),
+			E('div', { class: 'gl-login-host' }, [
+				document.body.getAttribute('data-hostname') || 'ImmortalWrt'
+			])
+		]), dlg.firstChild);
+
+		form.addEventListener('keypress', (ev) => {
+			if (ev.key === 'Enter')
+				btn.click();
+		});
+
+		btn.addEventListener('click', () => {
+			dlg.querySelectorAll('*').forEach((node) => {
+				node.style.display = 'none';
+			});
+			dlg.appendChild(E('div', {
+				class: 'spinning'
+			}, _('Logging in…')));
+
+			form.submit();
+		});
+
+		document.querySelector('input[type="password"]').focus();
+
+		return '';
+	},
+
+	addFooter() {},
+
+});
