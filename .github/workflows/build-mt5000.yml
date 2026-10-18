@@ -285,10 +285,13 @@ jobs:
           cd immortalwrt
           # master : patches/ = openwrt PR #24237 head (0001 设备支持本体)
           #         + 该 PR 的审阅反馈修复 (0002, 自 dmsza/openwrt 移植)
+          #         + 795-12 内核补丁上下文修复 (0003, dmsza b669f86d)
           # 25.12 : patches-25.12/ = dmsza/openwrt "[25.12] add support for
-          #         GL.iNet GL-MT5000" (e4415712), 审阅修复已并入; 为适配
-          #         ImmortalWrt v25.12.2 已剔除仅涉及 jiorouter 设备的 hunk
-          #         (其终态在上游已存在)。各自只对已验证的基线保证干净套用。
+          #         GL.iNet GL-MT5000" (现为 15e97e6, 审阅修复已并入; 为适配
+          #         ImmortalWrt v25.12.2 已剔除仅涉及 jiorouter 设备的 hunk,
+          #         其终态在上游已存在)
+          #         + 795-12 内核补丁上下文修复 (0002, dmsza 8c68cc4)。
+          #         各自只对已验证的基线保证干净套用。
           case "$IWRT_PROFILE" in
             25.12) PATCHDIR=../patches-25.12 ;;
             *)     PATCHDIR=../patches ;;

@@ -203,19 +203,23 @@ Run workflow 时填写:
 - **配置档与基线**:`iwrt_profile=master`(默认)使用快照基线 `f44d1535b4`(内核 6.18,
   补丁在 `patches/`);`iwrt_profile=25.12` 使用稳定版基线 `v25.12.2`(内核 6.12,
   补丁在 `patches-25.12/`)。`iwrt_ref` 显式填写时优先,但需自行确保对应补丁能套用。
-  跟进上游时:master 改基线需重验 `patches/0001+0002`;25.12 可跟进新 tag(如
+  跟进上游时:master 改基线需重验 `patches/0001+0002+0003`;25.12 可跟进新 tag(如
   `v25.12.3`)或 dmsza 上游分支更新,补丁套用失败时 Action 会明确报错,基于新基线
   重新生成 `patches-25.12/0001-*.patch` 即可(源自
   [dmsza/openwrt](https://github.com/dmsza/openwrt) 的 `[25.12]` 回移 commit
-  `e4415712`;为适配 ImmortalWrt v25.12.2 已剔除仅涉及 jiorouter 设备的 hunk,
-  其终态在 ImmortalWrt 上游已存在)
+  (现为 `15e97e6`,原 `e4415712` rebase 而来);为适配 ImmortalWrt v25.12.2 已剔除
+  仅涉及 jiorouter 设备的 hunk,其终态在 ImmortalWrt 上游已存在)。
+  `patches-25.12/0002` 是上游 `8c68cc4`(修复 795-12 在 795-11 offload 补丁之后
+  套用时的上下文,`15e97e6` 后新增)
 - 想跟进 ImmortalWrt master:`iwrt_ref` 填 `master`;设备补丁应用失败时
   Action 会明确报错,需基于 PR #24237 最新 head 重新生成 `patches/0001-*.patch`
-- 设备补丁分两层:`0001` 是 PR #24237 的原始提交(设备支持本体),
-  `0002` 是该 PR 的**审阅反馈修复**,移植自
+- 设备补丁分三层:`0001` 是 PR #24237 的原始提交(设备支持本体),
+  `0002` 是该 PR 的**审阅反馈修复**,`0003` 是上游 `b669f86d`
+  (修复 `795-12` 内核补丁在 `795-11` offload 补丁之后套用时的上下文,
+  `102a02f` 后新增),均移植自
   [dmsza/openwrt](https://github.com/dmsza/openwrt) 分支 `openwrt-main-mt5000`
-  (已对齐到分支最新 commit `102a02f`)。上游分支再更新时优先增补 `0002`,
-  并确认 `0001`+`0002` 能按顺序干净套用到 `iwrt_ref` 基线
+  (0002 对齐 `102a02f`,0003 对齐 `b669f86d`)。上游分支再更新时优先增补
+  `0002`/`0003`,并确认全链能按顺序干净套用到 `iwrt_ref` 基线
 - `patches/0002-*.patch` 的内容:RTL8366UB 默认 VLAN 表清零(默认 PVID 不
   承载任何数据 VLAN)、CPU 口强制只收 tagged 帧、DSA tag 协议号 32→200(避开
   上游已占用 id)、`795-12` 错误路径只回滚已成功注册的 netdev 并注销
@@ -223,6 +227,10 @@ Run workflow 时填写:
   `platform_copy_config()`(eMMC 上 sysupgrade 才会保留配置)、DTS 改名
   `mt7987a-glinet-gl-mt5000` 并补 serial0/stdout-path 等。重新生成 0001 后
   需同步核对 0002(其 hunk 上下文依赖 0001 生成的文件内容)
+- `patches/0003-*.patch` 的内容:把 `795-12`(dummy NAPI 补丁)的初始化与
+  清理改动合并为单个 hunk 并重写上下文,使其能在 `795-11`(RTL8366UB offload
+  补丁)先应用后仍干净套上——这是**内核构建期**打补丁阶段的修复,缺失时
+  25.12/master 构建可能在内核解包打补丁一步失败
 - 改编译配置:编辑 `config/mt5000.seed`(menuconfig 风格种子,defconfig 展开;
   workflow 的输入项会动态覆盖其中的 IP/分区大小/语言)
 - 改首启行为:输入项之外的固化定制放 `files/etc/uci-defaults/`;
@@ -243,7 +251,9 @@ Run workflow 时填写:
 .github/workflows/build-mt5000.yml   # CI 流程(含 25 个自定义输入)
 patches/0001-*.patch                 # MT5000 设备支持(上游 PR #24237, master 基线)
 patches/0002-*.patch                 # PR #24237 审阅反馈修复(自 dmsza/openwrt 移植, master 基线)
-patches-25.12/0001-*.patch           # MT5000 设备支持 25.12 回移(自 dmsza/openwrt e4415712, 含审阅修复)
+patches/0003-*.patch                 # 795-12 内核补丁上下文修复(dmsza b669f86d, master 基线)
+patches-25.12/0001-*.patch           # MT5000 设备支持 25.12 回移(自 dmsza/openwrt, 含审阅修复)
+patches-25.12/0002-*.patch           # 795-12 内核补丁上下文修复(dmsza 8c68cc4, 25.12 基线)
 config/mt5000.seed                   # 固件配置种子(基础定制)
 config/luci-extra.seed               # LuCI 应用精选清单(luci_extra_apps 选项控制)
 files/etc/uci-defaults/99-clean-apk-feeds  # 首启清理 404 apk 源

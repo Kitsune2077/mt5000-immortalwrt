@@ -1,0 +1,85 @@
+From 8c68cc49efdb8102ac7bc736494f2b7612780494 Mon Sep 17 00:00:00 2001
+From: Dimitri Souza <dimitri.souza@gmail.com>
+Date: Sun, 11 Oct 2026 21:53:56 -0300
+Subject: [PATCH] mediatek: fix 6.12 dummy NAPI patch context
+
+Combine the dummy NAPI initialization and cleanup changes into one hunk
+so the patch applies after the preceding RTL8366UB offload patch.
+
+Assisted-by: GitHub Copilot
+Signed-off-by: Dimitri Souza <dimitri.souza@gmail.com>
+---
+ ...ummy-napi-before-netdev-registration.patch | 37 ++++++++++---------
+ 1 file changed, 19 insertions(+), 18 deletions(-)
+
+diff --git a/target/linux/generic/pending-6.12/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch b/target/linux/generic/pending-6.12/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch
+index 707e4a0a3d3a16..4357e70bbec63d 100644
+--- a/target/linux/generic/pending-6.12/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch
++++ b/target/linux/generic/pending-6.12/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch
+@@ -17,7 +17,14 @@ diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
+ index 0c13e2a72b..68edd82895 100644
+ --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+ +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+-@@ -5718,6 +5718,21 @@ static int mtk_probe(struct platform_device *pdev)
++@@ -5611,56 +5611,61 @@
++ 				err = -ENOMEM;
++ 				goto err_deinit_ppe;
++ 			}
++ 			err = mtk_eth_offload_init(eth, i);
++ 
++ 			if (err)
++ 				goto err_deinit_ppe;
+  		}
+  	}
+  
+@@ -39,12 +46,11 @@ index 0c13e2a72b..68edd82895 100644
+  	for (i = 0; i < MTK_MAX_DEVS; i++) {
+  		if (!eth->netdev[i])
+  			continue;
+-@@ -5725,35 +5740,35 @@ static int mtk_probe(struct platform_device *pdev)
++ 
+  		err = register_netdev(eth->netdev[i]);
+  		if (err) {
+  			dev_err(eth->dev, "error bringing up device\n");
+--			goto err_deinit_ppe;
+-+			goto err_unreg_netdev;
++ 			goto err_unreg_netdev;
+  		} else
+  			netif_info(eth, probe, eth->netdev[i],
+  				   "mediatek frame engine at 0x%08lx, irq %d\n",
+@@ -71,20 +77,8 @@ index 0c13e2a72b..68edd82895 100644
+  
+  	return 0;
+  
+--err_unreg_netdev:
+--	mtk_unreg_dev(eth);
+-+err_unreg_netdev:
+-+	while (--i >= 0)
+-+		if (eth->netdev[i])
+-+			unregister_netdev(eth->netdev[i]);
+-+	for (i = 0; i < MTK_MAX_DEVS; i++) {
+-+		struct mtk_mac *mac;
+-+
+-+		if (!eth->netdev[i] || !MTK_HAS_CAPS(eth->soc->caps, MTK_QDMA))
+-+			continue;
+-+		mac = netdev_priv(eth->netdev[i]);
+-+		unregister_netdevice_notifier(&mac->device_notifier);
+-+	}
++ err_unreg_netdev:
++ 	mtk_unreg_dev(eth);
+ +	netif_napi_del(&eth->tx_napi);
+ +	netif_napi_del(&eth->rx_napi);
+ +	free_netdev(eth->dummy_dev);
+@@ -92,5 +86,12 @@ index 0c13e2a72b..68edd82895 100644
+  err_deinit_ppe:
+  	mtk_ppe_deinit(eth);
+  	mtk_mdio_cleanup(eth);
++ err_free_dev:
++ 	mtk_free_dev(eth);
++ err_deinit_hw:
++ 	mtk_hw_deinit(eth);
++ err_wed_exit:
++ 	mtk_wed_exit();
++ err_destroy_sgmii:
+ -- 
+ 2.51.0
