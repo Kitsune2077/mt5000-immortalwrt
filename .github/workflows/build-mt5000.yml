@@ -153,7 +153,7 @@ on:
         default: ''
         type: string
       luci_extra_apps:
-        description: '集成 LuCI 应用清单 (config/luci-extra.seed: argon 主题+配置/diskman/openclash/rclone/ttyd/upnp; passwall 已注释停用)'
+        description: '集成 LuCI 应用清单 (config/luci-extra.seed: argon 主题(3.0 设置已内置)/diskman/openclash/rclone/ttyd/upnp; passwall 已注释停用)'
         required: false
         default: true
         type: boolean
@@ -752,7 +752,7 @@ jobs:
           [ "$BAKE_DAEDE" = "true" ]   && DAEDE_OPT='编入固件(600s 超时补丁)' || DAEDE_OPT='运行时安装(默认)'
           if [ "$BAKE_DOONA" = "true" ]; then DOONA_OPT="已编入 (doona + honk v$DOONA_VERSION, alpha 实验性)"; else DOONA_OPT='未编入'; fi
           [ "$INCLUDE_DOCKER" = "true" ] && DOCKER_OPT='已集成' || DOCKER_OPT='未集成'
-          if [ "$LUCI_EXTRA_APPS" != "false" ] && [ "$LUCI_EXTRA_APPS" != "" ]; then LUCI_EXTRA_OPT='已集成(argon+配置/diskman/openclash/rclone/ttyd/upnp; passwall 已注释停用)'; else LUCI_EXTRA_OPT='未集成'; fi
+          if [ "$LUCI_EXTRA_APPS" != "false" ] && [ "$LUCI_EXTRA_APPS" != "" ]; then LUCI_EXTRA_OPT='已集成(argon 主题/diskman/openclash/rclone/ttyd/upnp; passwall 已注释停用)'; else LUCI_EXTRA_OPT='未集成'; fi
           if [ "$ENABLE_QUICKSTART" = "true" ]; then QS_OPT='已集成 (iStoreOS 风格首页/向导)'; else QS_OPT='未集成'; fi
           if [ "$PPPOE" = "true" ]; then PPPOE_OPT="已预置 (账号密码不显示)"; else PPPOE_OPT='未预置 (DHCP)'; fi
           if [ "$LUCI_FLAVOR" = "light" ]; then LUCI_OPT='luci-light (精简)'; else LUCI_OPT='luci (完整)'; fi

@@ -34,7 +34,7 @@
 | `lan_ipv6_dns` | 向客户端通告路由器为 IPv6 DNS | `false` |
 | `hostname` | 路由器主机名 | `ImmortalWrt` |
 | `root_password` | 默认 root 密码(留空保持无密码;仅首启且尚未设密码时写入) | `root` |
-| `luci_extra_apps` | 集成 LuCI 应用清单 `config/luci-extra.seed`(argon 主题+配置/diskman/openclash/rclone/ttyd/upnp,全部官方源;passwall 已注释停用) | `true` |
+| `luci_extra_apps` | 集成 LuCI 应用清单 `config/luci-extra.seed`(argon 主题/diskman/openclash/rclone/ttyd/upnp,全部官方源;passwall 已注释停用) | `true` |
 | `enable_quickstart` | 集成 luci-app-quickstart 首页/向导(iStoreOS 风格;自动带入 linkease nas/nas-luci 源,硬依赖 iStore 与磁盘工具链 e2fsprogs/parted/smartmontools 等,约增加十几 MB;核心为 aarch64 预编译二进制) | `false` |
 | `extra_feeds` | 额外软件源(多个用 `\|` 分隔) | 空 |
 | `extra_packages` | 额外编译进固件的软件包(空格分隔) | 空 |
@@ -111,7 +111,7 @@ odhcpd 的默认 O 标志会让客户端以为"还有 DHCPv6 可以问 DNS",徒�
 - `enable_quickstart=true` 时额外编入 **luci-app-quickstart**(iStoreOS 风格首页/
   网络向导,见选项表;LuCI 菜单进入「向导」/Quickstart,也可自行设为默认首页)
 - LuCI 应用精选清单(`luci_extra_apps`,全部官方源):
-  argon 主题 + luci-app-argon-config、diskman(含 btrfs/lsblk)、openclash、
+  argon 主题(3.0.0 起设置页内置,不再有独立配置应用)、diskman(含 btrfs/lsblk)、openclash、
   rclone(含 webui/ng)、ttyd、upnp、luci-compat(passwall 已注释停用,
   需要时去掉 `config/luci-extra.seed` 中的注释即可)
 - rootfs 2048MB;首启自动清理会 404 的 apk 源行

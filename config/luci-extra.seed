@@ -1,5 +1,5 @@
 # LuCI extra applications - curated app list for this firmware
-# (argon theme + config, diskman, openclash, rclone, ttyd, upnp; passwall commented out)
+# (argon theme, diskman, openclash, rclone, ttyd, upnp; passwall commented out)
 #
 # All packages below are available from the stock ImmortalWrt feeds,
 # no third-party feed is required.
@@ -14,9 +14,9 @@
 # shadowsocks-rust), which add significant build time (~1-2h).
 
 # --- Theme ---
+# argon 3.0.0+ has its settings page built into the theme package;
+# the standalone luci-app-argon-config was removed upstream (ebc4118b7)
 CONFIG_PACKAGE_luci-theme-argon=y
-# argon companion config app (theme settings in LuCI)
-CONFIG_PACKAGE_luci-app-argon-config=y
 
 # --- Disk management ---
 CONFIG_PACKAGE_luci-app-diskman=y
