@@ -1,0 +1,114 @@
+From: Dimitri Souza <dimitri.souza@gmail.com>
+Date: Sun, 18 Oct 2026 21:37:16 -0300
+Subject: [PATCH] net: dsa: rtl8366ub: fix VLAN offload and NAPI cleanup (6.18)
+
+Reject PPE offload for VLAN-aware RTL8366UB bridges and clean up QDMA
+notifiers if dummy NAPI device allocation fails.
+
+Upstream (dmsza/openwrt 8fbeeb6, 2026-10-19) targets the 6.12 patch
+series. This is the 6.18 adaptation for the master profile: kernel 6.18
+already carries the push_vid plumbing via pending-6.18/795-07/795-09,
+so the include and caller hunks are new hunks here and line numbers are
+adjusted accordingly.
+
+Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>
+Assisted-by: GitHub Copilot
+Adapted-by: Kitsune <km2077@foxmail.com>
+Signed-off-by: Dimitri Souza <dimitri.souza@gmail.com>
+---
+diff --git a/target/linux/generic/pending-6.18/795-11-net-dsa-rtl8366ub-8021q-ppe-offload.patch b/target/linux/generic/pending-6.18/795-11-net-dsa-rtl8366ub-8021q-ppe-offload.patch
+--- a/target/linux/generic/pending-6.18/795-11-net-dsa-rtl8366ub-8021q-ppe-offload.patch
++++ b/target/linux/generic/pending-6.18/795-11-net-dsa-rtl8366ub-8021q-ppe-offload.patch
+@@ -103,7 +103,15 @@ diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c b/drivers/net/ether
+ index df53e16..36944d2 100644
+ --- a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+ +++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+-@@ -203,6 +203,17 @@ mtk_flow_get_dsa_port(struct net_device **dev, u16 *push_vid)
++@@ -10,6 +10,7 @@
++ #include <net/flow_offload.h>
++ #include <net/pkt_cls.h>
++ #include <net/dsa.h>
+++#include <linux/if_bridge.h>
++ #include <linux/dsa/8021q.h>
++ #include "mtk_eth_soc.h"
++ #include "mtk_wed.h"
++@@ -203,6 +203,25 @@ mtk_flow_get_dsa_port(struct net_device **dev, u16 *push_vid)
+  		if (push_vid)
+  			*push_vid = dsa_tag_8021q_standalone_vid(dp);
+  		break;
+@@ -111,11 +119,19 @@ index df53e16..36944d2 100644
+ +		if (push_vid) {
+ +			struct net_device *br = dsa_port_bridge_dev_get(dp);
+ +
+-+			if (br)
+++			if (br) {
+++				/* The tagger leaves VLAN-aware bridge egress
+++				 * untagged. The PPE cannot replace the required
+++				 * egress VLAN with this management VID.
+++				 */
+++				if (br_vlan_enabled(br))
+++					return -EOPNOTSUPP;
+++
+ +				*push_vid = dsa_tag_8021q_bridge_vid(
+ +					dsa_port_bridge_num_get(dp));
+-+			else
+++			} else {
+ +				*push_vid = dsa_tag_8021q_standalone_vid(dp);
+++			}
+ +		}
+ +		break;
+  	default:
+@@ -130,6 +146,15 @@ index df53e16..36944d2 100644
+  	u16 push_vid = 0;
+  
+  	if (mtk_flow_get_wdma_info(dev, dest_mac, &info) == 0) {
++@@ -239,6 +251,8 @@ mtk_flow_set_output_device(struct mtk_eth *eth, struct mtk_foe_entry *foe,
++ 	}
++ 
++ 	dsa_port = mtk_flow_get_dsa_port(&dev, &push_vid);
+++	if (dsa_port == -EOPNOTSUPP)
+++		return dsa_port;
++ 
++ 	if (dev == eth->netdev[0])
++ 		pse_port = PSE_GDM1_PORT;
+ @@ -263,8 +275,11 @@ mtk_flow_set_output_device(struct mtk_eth *eth, struct mtk_foe_entry *foe,
+  	if (dsa_port >= 0) {
+ -		if (push_vid)
+diff --git a/target/linux/generic/pending-6.18/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch b/target/linux/generic/pending-6.18/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch
+--- a/target/linux/generic/pending-6.18/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch
++++ b/target/linux/generic/pending-6.18/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch
+@@ -17,7 +17,7 @@ diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
+ index 0c13e2a72b..68edd82895 100644
+ --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+ +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+-@@ -5725,60 +5725,65 @@
++@@ -5725,60 +5725,67 @@
+  
+  			if (!eth->ppe[i]) {
+  				err = -ENOMEM;
+@@ -38,7 +38,7 @@ index 0c13e2a72b..68edd82895 100644
+ +	if (!eth->dummy_dev) {
+ +		err = -ENOMEM;
+ +		dev_err(eth->dev, "failed to allocated dummy device\n");
+-+		goto err_deinit_ppe;
+++		goto err_unreg_netdev;
+ +	}
+ +	eth->dummy_dev->threaded = 1;
+ +	strcpy(eth->dummy_dev->name, "mtk_eth");
+@@ -81,10 +81,12 @@ index 0c13e2a72b..68edd82895 100644
+  
+  err_unreg_netdev:
+  	mtk_unreg_dev(eth);
+-+	netif_napi_del(&eth->tx_napi);
+-+	netif_napi_del(&eth->rx_napi);
+-+	free_netdev(eth->dummy_dev);
+-+	eth->dummy_dev = NULL;
+++	if (eth->dummy_dev) {
+++		netif_napi_del(&eth->tx_napi);
+++		netif_napi_del(&eth->rx_napi);
+++		free_netdev(eth->dummy_dev);
+++		eth->dummy_dev = NULL;
+++	}
+  err_deinit_ppe:
+  	mtk_ppe_deinit(eth);
+  	mtk_mdio_cleanup(eth);
