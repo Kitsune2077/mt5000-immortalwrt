@@ -201,7 +201,9 @@ Run workflow 时填写:
 ## 维护说明
 
 - **配置档与基线**:`iwrt_profile=master`(默认)使用快照基线 `f44d1535b4`(内核 6.18,
-  补丁在 `patches/`);`iwrt_profile=25.12` 使用稳定版基线 `v25.12.2`(内核 6.12,
+  补丁在 `patches/`);`iwrt_profile=25.12` 使用稳定线基线 `84b665b5de`
+  (ImmortalWrt `openwrt-25.12` 分支 HEAD @2026-10-24,内核 6.12,已并入上游
+  25.12.x(.6 世代)修复——ImmortalWrt 尚无 v25.12.3+ tag,故 pin 分支提交;
   补丁在 `patches-25.12/`)。`iwrt_ref` 显式填写时优先,但需自行确保对应补丁能套用。
   跟进上游时:master 改基线需重验 `patches/0001~0003`;25.12 可跟进新 tag(如
   `v25.12.3`)或 dmsza 上游分支更新,补丁套用失败时 Action 会明确报错,基于新基线

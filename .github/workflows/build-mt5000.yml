@@ -12,7 +12,7 @@ on:
           - master
           - '25.12'
       iwrt_ref:
-        description: 'ImmortalWrt 基础版本 (commit/tag/branch; 留空则用 iwrt_profile 默认基线: master→f44d1535b4, 25.12→v25.12.2; 显式填写时优先, 但需自行确保补丁能套用)'
+        description: 'ImmortalWrt 基础版本 (commit/tag/branch; 留空则用 iwrt_profile 默认基线: master→f44d1535b4, 25.12→84b665b5de; 显式填写时优先, 但需自行确保补丁能套用)'
         required: false
         default: ''
         type: string
@@ -237,7 +237,9 @@ jobs:
           if [ -n "$IWRT_REF" ]; then
             echo "iwrt_ref 显式指定, 优先于 iwrt_profile 默认基线: $IWRT_REF"
           elif [ "$IWRT_PROFILE" = "25.12" ]; then
-            IWRT_REF=v25.12.2
+            # ImmortalWrt 无 v25.12.3+ tag, 此 pin = openwrt-25.12 分支 HEAD
+            # (2026-10-24, 已并入上游 25.12.x(.6 世代) 修复)
+            IWRT_REF=84b665b5de
           else
             IWRT_REF=f44d1535b4
           fi
