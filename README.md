@@ -105,6 +105,10 @@ odhcpd 的默认 O 标志会让客户端以为"还有 DHCPv6 可以问 DNS",徒�
   尚无密码时写入,保留配置升级**不会**覆盖你已改过的密码)
 - autocore 状态页(CPU 型号/频率/温度)
 - luci-app-run 网页上传/运行安装器(必装, 支持 .run/.sh/.ipk/.apk)
+- **USB 口网络全家桶**:`kmod-usb3` 主机栈 + USB 有线网卡(RTL815x/AX88179/ASIX/
+  LAN78xx/CDC-Ether)+ **4G/5G 转接板**(QMI/MBIM/NCM + 串口,含 uqmi/umbim)+
+  **手机 USB 共享**(安卓 RNDIS/NCM、iPhone ipheth);插上即插即用,
+  LuCI「接口-新建协议」里选 QMI/MBIM/NCM/DHCP 即可
 - 内核 BTF + XDP_SOCKETS(eBPF CO-RE 前置)
 - daede 运行前置依赖全套内置:kmod 五件套 + v2ray geo 数据 + ca-bundle
 - iStore 软件商店
