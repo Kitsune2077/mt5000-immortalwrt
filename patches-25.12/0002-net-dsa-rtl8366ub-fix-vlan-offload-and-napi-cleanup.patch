@@ -1,17 +1,19 @@
 From: Dimitri Souza <dimitri.souza@gmail.com>
 Date: Sun, 18 Oct 2026 21:37:16 -0300
-Subject: [PATCH] net: dsa: rtl8366ub: fix VLAN offload and NAPI cleanup (25.12, original-form)
+Subject: [PATCH] net: dsa: rtl8366ub: fix VLAN offload and NAPI cleanup (25.12, 6.12.112-era)
 
-Reject PPE offload for VLAN-aware RTL8366UB bridges and clean up QDMA
-notifiers if dummy NAPI device allocation fails.
+Reject PPE offload for VLAN-aware RTL8366UB bridges and clean up the
+dummy NAPI device when its allocation fails.
 
-Functional content is upstream dmsza/openwrt 8fbeeb6 (2026-10-19). The
-795-11 changes are carried verbatim; the 795-12 changes are folded into
-the ORIGINAL hunk form from 0001 instead of upstream's companion context
-rewrite (8c68cc4 targets dmsza's v25.12.6-based tree and has never been
-validated against our pinned v25.12.2 baseline - see the master-profile
-CI failure with its 6.18 sibling b669f86d for why that rewrite is risky
-here).
+The 795-11 changes are upstream dmsza/openwrt 8fbeeb6 (2026-10-19)
+carried verbatim. The 795-12 file is rewritten into dmsza's current
+openwrt-25.12-mt5000 state (b325c2b "mediatek: fix 6.12 dummy NAPI
+patch context" + 8fbeeb6's cleanup guard): baseline pin 84b665b5de
+ships linux 6.12.112, where upstream stable already routes
+register_netdev() failure to err_unreg_netdev, so 0001's pre-rebase
+hunk form rejects (Hunk #2 of the embedded diff) and its
+device_notifier cleanup would not even compile on this tree. Verified
+to apply cleanly to the 6.12.112 + pending-6.12 quilt intermediate.
 
 Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>
 Assisted-by: GitHub Copilot
@@ -88,10 +90,26 @@ index d8afc7e1097e33..ef0decc718dd88 100644
   
   	if (dsa_port >= 0) {
 diff --git a/target/linux/generic/pending-6.12/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch b/target/linux/generic/pending-6.12/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch
-index 707e4a0..f95ec35 100644
+index 707e4a0..3a8eb22 100644
 --- a/target/linux/generic/pending-6.12/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch
 +++ b/target/linux/generic/pending-6.12/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch
-@@ -29,7 +29,7 @@ index 0c13e2a72b..68edd82895 100644
+@@ -17,7 +17,14 @@ diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
+ index 0c13e2a72b..68edd82895 100644
+ --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+ +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+-@@ -5718,6 +5718,21 @@ static int mtk_probe(struct platform_device *pdev)
++@@ -5611,56 +5611,63 @@
++ 				err = -ENOMEM;
++ 				goto err_deinit_ppe;
++ 			}
++ 			err = mtk_eth_offload_init(eth, i);
++ 
++ 			if (err)
++ 				goto err_deinit_ppe;
+  		}
+  	}
+  
+@@ -29,7 +36,7 @@ index 0c13e2a72b..68edd82895 100644
  +	if (!eth->dummy_dev) {
  +		err = -ENOMEM;
  +		dev_err(eth->dev, "failed to allocated dummy device\n");
@@ -100,29 +118,59 @@ index 707e4a0..f95ec35 100644
  +	}
  +	eth->dummy_dev->threaded = 1;
  +	strcpy(eth->dummy_dev->name, "mtk_eth");
-@@ -39,7 +39,7 @@ index 0c13e2a72b..68edd82895 100644
+@@ -39,12 +46,11 @@ index 0c13e2a72b..68edd82895 100644
   	for (i = 0; i < MTK_MAX_DEVS; i++) {
   		if (!eth->netdev[i])
   			continue;
 -@@ -5725,35 +5740,35 @@ static int mtk_probe(struct platform_device *pdev)
-+@@ -5725,35 +5740,37 @@ static int mtk_probe(struct platform_device *pdev)
++ 
   		err = register_netdev(eth->netdev[i]);
   		if (err) {
   			dev_err(eth->dev, "error bringing up device\n");
-@@ -85,10 +85,12 @@ index 0c13e2a72b..68edd82895 100644
- +		mac = netdev_priv(eth->netdev[i]);
- +		unregister_netdevice_notifier(&mac->device_notifier);
- +	}
--+	netif_napi_del(&eth->tx_napi);
--+	netif_napi_del(&eth->rx_napi);
--+	free_netdev(eth->dummy_dev);
--+	eth->dummy_dev = NULL;
+--			goto err_deinit_ppe;
+-+			goto err_unreg_netdev;
++ 			goto err_unreg_netdev;
+  		} else
+  			netif_info(eth, probe, eth->netdev[i],
+  				   "mediatek frame engine at 0x%08lx, irq %d\n",
+@@ -71,26 +77,23 @@ index 0c13e2a72b..68edd82895 100644
+  
+  	return 0;
+  
+--err_unreg_netdev:
+--	mtk_unreg_dev(eth);
+-+err_unreg_netdev:
+-+	while (--i >= 0)
+-+		if (eth->netdev[i])
+-+			unregister_netdev(eth->netdev[i]);
+-+	for (i = 0; i < MTK_MAX_DEVS; i++) {
+-+		struct mtk_mac *mac;
+-+
+-+		if (!eth->netdev[i] || !MTK_HAS_CAPS(eth->soc->caps, MTK_QDMA))
+-+			continue;
+-+		mac = netdev_priv(eth->netdev[i]);
+-+		unregister_netdevice_notifier(&mac->device_notifier);
++ err_unreg_netdev:
++ 	mtk_unreg_dev(eth);
 ++	if (eth->dummy_dev) {
 ++		netif_napi_del(&eth->tx_napi);
 ++		netif_napi_del(&eth->rx_napi);
 ++		free_netdev(eth->dummy_dev);
 ++		eth->dummy_dev = NULL;
-++	}
+ +	}
+-+	netif_napi_del(&eth->tx_napi);
+-+	netif_napi_del(&eth->rx_napi);
+-+	free_netdev(eth->dummy_dev);
+-+	eth->dummy_dev = NULL;
   err_deinit_ppe:
   	mtk_ppe_deinit(eth);
   	mtk_mdio_cleanup(eth);
++ err_free_dev:
++ 	mtk_free_dev(eth);
++ err_deinit_hw:
++ 	mtk_hw_deinit(eth);
++ err_wed_exit:
++ 	mtk_wed_exit();
++ err_destroy_sgmii:
+ -- 
+ 2.51.0

@@ -289,10 +289,13 @@ jobs:
           #         + 该 PR 的审阅反馈修复 (0002, 自 dmsza/openwrt 移植)
           #         + 795-12 内核补丁上下文修复 (0003, dmsza b669f86d)
           # 25.12 : patches-25.12/ = dmsza/openwrt "[25.12] add support for
-          #         GL.iNet GL-MT5000" (现为 15e97e6, 审阅修复已并入; 为适配
-          #         ImmortalWrt v25.12.2 已剔除仅涉及 jiorouter 设备的 hunk,
+          #         GL.iNet GL-MT5000" (现为 af67b61, 审阅修复已并入; 为适配
+          #         ImmortalWrt 树已剔除仅涉及 jiorouter 设备的 hunk,
           #         其终态在上游已存在)
-          #         + 795-12 内核补丁上下文修复 (0002, dmsza 8c68cc4)。
+          #         + 795-11 VLAN 卸载拒绝 + 795-12 重制 (0002, dmsza 8fbeeb6
+          #         + b325c2b 上下文重制; 基线 84b665b5de 内核 6.12.112 的
+          #         mtk_probe 错误路径已被上游 stable 改过, 0001 的旧 hunk
+          #         形态套不上)。
           #         各自只对已验证的基线保证干净套用。
           case "$IWRT_PROFILE" in
             25.12) PATCHDIR=../patches-25.12 ;;

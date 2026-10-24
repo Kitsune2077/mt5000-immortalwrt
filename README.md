@@ -222,21 +222,27 @@ Run workflow 时填写:
   `v25.12.3`)或 dmsza 上游分支更新,补丁套用失败时 Action 会明确报错,基于新基线
   重新生成 `patches-25.12/0001-*.patch` 即可(源自
   [dmsza/openwrt](https://github.com/dmsza/openwrt) 的 `[25.12]` 回移 commit
-  (现为 `15e97e6`,原 `e4415712` rebase 而来);为适配 ImmortalWrt v25.12.2 已剔除
+  (现为 `af67b61`,原 `e4415712` rebase 而来);为适配 ImmortalWrt 树已剔除
   仅涉及 jiorouter 设备的 hunk,其终态在 ImmortalWrt 上游已存在)。
-  `patches-25.12/0002` 是上游 `8fbeeb6` 的**原形态适配版**(拒绝 VLAN-aware 桥的
-  PPE 卸载 + dummy NAPI 分配失败时清理 QDMA notifier;795-12 部分落在 0001 的
-  原始 hunk 形态上,不采用上游针对其 v25.12.6 树的上下文重写)
+  `patches-25.12/0002`:795-11 段是上游 `8fbeeb6` 原形态(拒绝 VLAN-aware 桥的
+  PPE 卸载);795-12 段采用 dmsza 分支当前形态(`b325c2b` 上下文重制 + `8fbeeb6`
+  的 `if (eth->dummy_dev)` 清理防护)——基线 `84b665b5de`(内核 6.12.112)上
+  上游 stable 已把 `register_netdev()` 失败路径改为 `err_unreg_netdev`,0001 的
+  旧 hunk 形态在内核打补丁阶段 Hunk #2 套不上(且其 device_notifier 清理在
+  本树无对应字段、无法编译)
 - 想跟进 ImmortalWrt master:`iwrt_ref` 填 `master`;设备补丁应用失败时
   Action 会明确报错,需基于 PR #24237 最新 head 重新生成 `patches/0001-*.patch`
 - 设备补丁分三层:`0001` 是 PR #24237 的原始提交(设备支持本体),
   `0002` 是该 PR 的**审阅反馈修复**,`0003` 是上游 `8fbeeb6` 的**6.18 适配版**
   (拒绝 VLAN-aware 桥的 PPE 卸载 + dummy NAPI 分配失败时清理 QDMA notifier),
   均移植自 [dmsza/openwrt](https://github.com/dmsza/openwrt)(0002 对齐 `102a02f`)。
-  **注意**:`8fbeeb6` 的伴随提交(`b669f86d`/`8c68cc4`,795-12 上下文重写)针对
-  dmsza 自己的 openwrt main / v25.12.6 树,在我们的固定基线上**内核打补丁阶段
-  套不上**(CI 实测失败),因此 0003 不采用其重写形态,而是把功能修复折叠进
-  0001 的原始 hunk(r13 时代已验证可套)。上游分支再更新时优先增补后续层,
+  **注意**:`8fbeeb6` 的 6.18 伴随提交(`b669f86d`,795-12 上下文重写)针对
+  dmsza 自己的 openwrt main 树,在 master 固定基线上**内核打补丁阶段套不上**
+  (CI 实测失败),因此 0003 不采用其重写形态,而是把功能修复折叠进 0001 的
+  原始 hunk(r13 时代已验证可套)。25.12 侧则相反:基线升到 `84b665b5de`
+  (6.12.112)后,0001 的旧 hunk 形态反而套不上,`0002` 已采用 dmsza 分支当前
+  的重制形态(`b325c2b` + `8fbeeb6`,已对 6.12.112 + pending-6.12 中间态
+  逐字节验证)。上游分支再更新时优先增补后续层,
   并确认全链能按顺序干净套用到 `iwrt_ref` 基线
 - `patches/0002-*.patch` 的内容:RTL8366UB 默认 VLAN 表清零(默认 PVID 不
   承载任何数据 VLAN)、CPU 口强制只收 tagged 帧、DSA tag 协议号 32→200(避开
@@ -271,7 +277,7 @@ patches/0001-*.patch                 # MT5000 设备支持(上游 PR #24237, mas
 patches/0002-*.patch                 # PR #24237 审阅反馈修复(自 dmsza/openwrt 移植, master 基线)
 patches/0003-*.patch                 # VLAN 卸载/NAPI 清理修复(dmsza 8fbeeb6 的 6.18 原形态适配)
 patches-25.12/0001-*.patch           # MT5000 设备支持 25.12 回移(自 dmsza/openwrt, 含审阅修复)
-patches-25.12/0002-*.patch           # VLAN 卸载/NAPI 清理修复(dmsza 8fbeeb6 的原形态适配)
+patches-25.12/0002-*.patch           # VLAN 卸载修复(8fbeeb6)+ 795-12 重制(b325c2b, 6.12.112 基线)
 config/mt5000.seed                   # 固件配置种子(基础定制)
 config/luci-extra.seed               # LuCI 应用精选清单(luci_extra_apps 选项控制)
 files/etc/uci-defaults/99-clean-apk-feeds  # 首启清理 404 apk 源
