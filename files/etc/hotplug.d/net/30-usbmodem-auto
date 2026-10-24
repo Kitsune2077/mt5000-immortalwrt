@@ -1,0 +1,92 @@
+#!/bin/sh
+# 30-usbmodem-auto: 随身WiFi / USB 网卡即插即用自动配置
+# 检测 qmi_wwan / cdc_mbim / cdc_ncm / rndis_host / cdc_ether 设备插入,
+# 自动创建 netifd 接口 "modem"(选对协议), 挂入防火墙 wan 区域, 并设
+# metric=50 使其默认作为备份上联网(不抢主 WAN 默认路由; 配合 mwan3 时
+# 由 mwan3 策略接管)。只自动配置一次; 用户删除接口后再次插拔会重建。
+
+[ "$ACTION" = "add" ] || exit 0
+[ "$DEVTYPE" = "net" ] || exit 0
+[ -n "$INTERFACE" ] || exit 0
+
+# 已配置过则不再动 (用户可自行改名/改协议; 删除后重插会重建)
+uci -q get network.modem >/dev/null 2>&1 && exit 0
+
+sysdev="/sys/class/net/$INTERFACE/device"
+[ -d "$sysdev" ] || exit 0
+drv=$(basename "$(readlink "$sysdev/driver" 2>/dev/null)" 2>/dev/null)
+[ -n "$drv" ] || exit 0
+
+# 找同设备的 cdc-wdm 节点 (qmi/mbim 控制口)
+find_wdm() {
+    local p w
+    p=$(readlink -f "$sysdev" 2>/dev/null)
+    [ -n "$p" ] || return 1
+    for w in "$p"/../cdc-wdm* "$p"/*/cdc-wdm*; do
+        [ -e "$w" ] || continue
+        echo "/dev/$(basename "$w")"
+        return 0
+    done
+    return 1
+}
+
+metric=50
+case "$drv" in
+qmi_wwan)
+    wdm=$(find_wdm) || exit 0
+    uci set network.modem=interface
+    uci set network.modem.proto='qmi'
+    uci set network.modem.device="$wdm"
+    uci set network.modem.apn='ctnet'
+    uci set network.modem.authype='none'
+    ;;
+cdc_mbim)
+    wdm=$(find_wdm) || exit 0
+    uci set network.modem=interface
+    uci set network.modem.proto='mbim'
+    uci set network.modem.device="$wdm"
+    uci set network.modem.apn='ctnet'
+    ;;
+cdc_ncm)
+    uci set network.modem=interface
+    uci set network.modem.proto='ncm'
+    uci set network.modem.device="$INTERFACE"
+    uci set network.modem.apn='ctnet'
+    ;;
+rndis_host|cdc_ether)
+    # IP 直通型随身WiFi/手机共享: 就是一张 DHCP 网卡
+    uci set network.modem=interface
+    uci set network.modem.proto='dhcp'
+    uci set network.modem.device="$INTERFACE"
+    ;;
+*)
+    exit 0
+    ;;
+esac
+
+uci set network.modem.auto='1'
+uci set network.modem.metric="$metric"
+uci commit network
+
+# 挂入防火墙 wan 区域 (已含则跳过)
+fwz=$(uci -q get firewall.@zone[1].name)
+[ "$fwz" = "wan" ] || fwz=""
+[ -z "$fwz" ] && {
+    i=0
+    while uci -q get firewall.@zone[$i] >/dev/null 2>&1; do
+        [ "$(uci -q get firewall.@zone[$i].name)" = "wan" ] && { fwz=$i; break; }
+        i=$((i + 1))
+    done
+}
+[ -n "$fwz" ] && {
+    uci -q del_list firewall.@zone[$fwz].network='modem'
+    uci add_list firewall.@zone[$fwz].network='modem'
+    uci commit firewall
+}
+
+logger -t usbmodem-auto "auto-configured interface 'modem' ($drv -> $(uci -q get network.modem.proto))"
+
+# 重载网络; 若装了 mwan3 一并重载其钩子
+ubus call network reload >/dev/null 2>&1
+command -v mwan3 >/dev/null 2>&1 && mwan3 reload >/dev/null 2>&1
+exit 0
