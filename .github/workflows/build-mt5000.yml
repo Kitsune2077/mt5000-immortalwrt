@@ -810,6 +810,7 @@ jobs:
             echo "- luci-app-run 网页上传/运行安装器(必装, 支持 .run/.sh/.ipk/.apk)"
             echo "- USB 口网络全家桶:USB 网卡(RTL815x/AX88179/ASIX/LAN78xx)、4G/5G 转接板(QMI/MBIM/NCM+串口)、手机 USB 共享(安卓 RNDIS/NCM、iPhone)"
             echo "- mwan3 多线管理(有线/随身WiFi/手机共享 优先级与故障转移, LuCI「网络→Multi WAN」)"
+            echo "- 随身WiFi/USB网卡即插即用: 插入自动建接口+挂防火墙(metric=50 默认备份线, 零点击)"
             echo "- 首启自动清理会 404 的 apk 软件源"
             echo ""
             echo "### 刷机方法"

@@ -109,6 +109,11 @@ odhcpd 的默认 O 标志会让客户端以为"还有 DHCPv6 可以问 DNS",徒�
   LAN78xx/CDC-Ether)+ **4G/5G 转接板**(QMI/MBIM/NCM + 串口,含 uqmi/umbim)+
   **手机 USB 共享**(安卓 RNDIS/NCM、iPhone ipheth);插上即插即用,
   LuCI「接口-新建协议」里选 QMI/MBIM/NCM/DHCP 即可
+- **随身 WiFi 即插即用**:hotplug 钩子 `30-usbmodem-auto` 自动识别
+  QMI/MBIM/NCM/RNDIS 设备,插入即自动创建接口 `modem`(自动选对协议、
+  wdm 控制口自动探测、APN 默认 `ctnet` 可自行改)、挂入防火墙 wan 区域、
+  metric=50 使其默认作为**备份上联**(不抢主 WAN 路由);零点击,
+  删除接口后重新插拔即重建;配合 mwan3 可拖入策略设优先级
 - **mwan3 多线管理**(原厂多上网方式管理的等价物):有线 WAN + 随身 WiFi +
   手机共享等多条上行同时在线,支持**优先级策略**(如 有线优先、随身 WiFi 备份)
   与**健康检查自动切换**(Ping 探测失败自动切到下一条线);配置入口
