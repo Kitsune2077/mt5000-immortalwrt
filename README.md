@@ -109,6 +109,10 @@ odhcpd 的默认 O 标志会让客户端以为"还有 DHCPv6 可以问 DNS",徒�
   LAN78xx/CDC-Ether)+ **4G/5G 转接板**(QMI/MBIM/NCM + 串口,含 uqmi/umbim)+
   **手机 USB 共享**(安卓 RNDIS/NCM、iPhone ipheth);插上即插即用,
   LuCI「接口-新建协议」里选 QMI/MBIM/NCM/DHCP 即可
+- **mwan3 多线管理**(原厂多上网方式管理的等价物):有线 WAN + 随身 WiFi +
+  手机共享等多条上行同时在线,支持**优先级策略**(如 有线优先、随身 WiFi 备份)
+  与**健康检查自动切换**(Ping 探测失败自动切到下一条线);配置入口
+  LuCI「网络 → Multi WAN」;注意每个上行接口需在防火墙 wan 区域或单独区域
 - 内核 BTF + XDP_SOCKETS(eBPF CO-RE 前置)
 - daede 运行前置依赖全套内置:kmod 五件套 + v2ray geo 数据 + ca-bundle
 - iStore 软件商店

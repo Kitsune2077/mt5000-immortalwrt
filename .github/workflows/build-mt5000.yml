@@ -427,8 +427,8 @@ jobs:
           grep -qE 'CONFIG_KERNEL_DEBUG_INFO_BTF=y' .config            || { echo "::error::内核 BTF 缺失"; exit 1; }
           grep -qE 'CONFIG_PACKAGE_luci-app-run=y' .config             || { echo "::error::luci-app-run 缺失 (wkd feed 安装失败?)"; exit 1; }
           # USB 网络(网卡/4G/5G 转接板/手机共享)关键符号抽查
-          for U in kmod-usb3 kmod-usb-net-qmi-wwan kmod-usb-net-cdc-mbim kmod-usb-net-cdc-ncm kmod-usb-net-rndis kmod-usb-net-ipheth kmod-usb-net-rtl8152; do
-            grep -qE "^CONFIG_PACKAGE_${U}=y" .config || { echo "::error::USB 网络组件缺失: $U (包名变动? 请核对 config/mt5000.seed)"; exit 1; }
+          for U in kmod-usb3 kmod-usb-net-qmi-wwan kmod-usb-net-cdc-mbim kmod-usb-net-cdc-ncm kmod-usb-net-rndis kmod-usb-net-ipheth kmod-usb-net-rtl8152 mwan3 luci-app-mwan3; do
+            grep -qE "^CONFIG_PACKAGE_${U}=y" .config || { echo "::error::USB 网络/多线管理组件缺失: $U (包名变动? 请核对 config/mt5000.seed)"; exit 1; }
           done
           grep -qE '^CONFIG_PACKAGE_(luci|luci-light)=y' .config      || { echo "::error::LuCI 套件未生效 (luci_flavor)"; exit 1; }
           grep -qE '^CONFIG_PACKAGE_uhttpd=y' .config                 || { echo "::error::uhttpd 缺失: LuCI 无 Web 服务器, 管理页面将无法访问"; exit 1; }
@@ -809,6 +809,7 @@ jobs:
             echo "- autocore 状态页(CPU 型号/频率/温度)"
             echo "- luci-app-run 网页上传/运行安装器(必装, 支持 .run/.sh/.ipk/.apk)"
             echo "- USB 口网络全家桶:USB 网卡(RTL815x/AX88179/ASIX/LAN78xx)、4G/5G 转接板(QMI/MBIM/NCM+串口)、手机 USB 共享(安卓 RNDIS/NCM、iPhone)"
+            echo "- mwan3 多线管理(有线/随身WiFi/手机共享 优先级与故障转移, LuCI「网络→Multi WAN」)"
             echo "- 首启自动清理会 404 的 apk 软件源"
             echo ""
             echo "### 刷机方法"

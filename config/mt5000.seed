@@ -60,6 +60,14 @@ CONFIG_PACKAGE_kmod-usb-serial-option=y
 CONFIG_PACKAGE_kmod-usb-net-rndis=y
 CONFIG_PACKAGE_kmod-usb-net-ipheth=y
 
+# --- multi-WAN management (wired + 4G/5G stick + phone tethering) ---
+# mwan3: health-checked failover + policy routing with per-member priority
+# (the stock GL.iNet multi-uplink manager equivalent); LuCI page under
+# Network -> Multi WAN. (usb-modeswitch no longer exists in any OpenWrt
+# feed; modern sticks enumerate directly as RNDIS/ECM/QMI/MBIM)
+CONFIG_PACKAGE_mwan3=y
+CONFIG_PACKAGE_luci-app-mwan3=y
+
 # LuCI simplified Chinese UI (default language set by files/etc/uci-defaults)
 CONFIG_LUCI_LANG_zh_Hans=y
 
