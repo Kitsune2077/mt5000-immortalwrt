@@ -1,18 +1,23 @@
-From 8fbeeb647c79cba635af81da442045ac1f46ee8d Mon Sep 17 00:00:00 2001
 From: Dimitri Souza <dimitri.souza@gmail.com>
 Date: Sun, 18 Oct 2026 21:37:16 -0300
-Subject: [PATCH] net: dsa: rtl8366ub: fix VLAN offload and NAPI cleanup
+Subject: [PATCH] net: dsa: rtl8366ub: fix VLAN offload and NAPI cleanup (25.12, original-form)
 
-Reject PPE offload for VLAN-aware RTL8366UB bridges and clean up QDMA notifiers if dummy NAPI device allocation fails.
+Reject PPE offload for VLAN-aware RTL8366UB bridges and clean up QDMA
+notifiers if dummy NAPI device allocation fails.
+
+Functional content is upstream dmsza/openwrt 8fbeeb6 (2026-10-19). The
+795-11 changes are carried verbatim; the 795-12 changes are folded into
+the ORIGINAL hunk form from 0001 instead of upstream's companion context
+rewrite (8c68cc4 targets dmsza's v25.12.6-based tree and has never been
+validated against our pinned v25.12.2 baseline - see the master-profile
+CI failure with its 6.18 sibling b669f86d for why that rewrite is risky
+here).
 
 Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>
 Assisted-by: GitHub Copilot
+Adapted-by: Kitsune <km2077@foxmail.com>
 Signed-off-by: Dimitri Souza <dimitri.souza@gmail.com>
 ---
- ...-net-dsa-rtl8366ub-8021q-ppe-offload.patch | 23 ++++++++++++++-----
- ...ummy-napi-before-netdev-registration.patch | 14 ++++++-----
- 2 files changed, 25 insertions(+), 12 deletions(-)
-
 diff --git a/target/linux/generic/pending-6.12/795-11-net-dsa-rtl8366ub-8021q-ppe-offload.patch b/target/linux/generic/pending-6.12/795-11-net-dsa-rtl8366ub-8021q-ppe-offload.patch
 index d8afc7e1097e33..ef0decc718dd88 100644
 --- a/target/linux/generic/pending-6.12/795-11-net-dsa-rtl8366ub-8021q-ppe-offload.patch
@@ -83,19 +88,10 @@ index d8afc7e1097e33..ef0decc718dd88 100644
   
   	if (dsa_port >= 0) {
 diff --git a/target/linux/generic/pending-6.12/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch b/target/linux/generic/pending-6.12/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch
-index 4357e70bbec63d..3a8eb2271d0c6a 100644
+index 707e4a0..f95ec35 100644
 --- a/target/linux/generic/pending-6.12/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch
 +++ b/target/linux/generic/pending-6.12/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch
-@@ -17,7 +17,7 @@ diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
- index 0c13e2a72b..68edd82895 100644
- --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
- +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
--@@ -5611,56 +5611,61 @@
-+@@ -5611,56 +5611,63 @@
-  				err = -ENOMEM;
-  				goto err_deinit_ppe;
-  			}
-@@ -36,7 +36,7 @@ index 0c13e2a72b..68edd82895 100644
+@@ -29,7 +29,7 @@ index 0c13e2a72b..68edd82895 100644
  +	if (!eth->dummy_dev) {
  +		err = -ENOMEM;
  +		dev_err(eth->dev, "failed to allocated dummy device\n");
@@ -104,10 +100,19 @@ index 4357e70bbec63d..3a8eb2271d0c6a 100644
  +	}
  +	eth->dummy_dev->threaded = 1;
  +	strcpy(eth->dummy_dev->name, "mtk_eth");
-@@ -79,10 +79,12 @@ index 0c13e2a72b..68edd82895 100644
-  
-  err_unreg_netdev:
-  	mtk_unreg_dev(eth);
+@@ -39,7 +39,7 @@ index 0c13e2a72b..68edd82895 100644
+  	for (i = 0; i < MTK_MAX_DEVS; i++) {
+  		if (!eth->netdev[i])
+  			continue;
+-@@ -5725,35 +5740,35 @@ static int mtk_probe(struct platform_device *pdev)
++@@ -5725,35 +5740,37 @@ static int mtk_probe(struct platform_device *pdev)
+  		err = register_netdev(eth->netdev[i]);
+  		if (err) {
+  			dev_err(eth->dev, "error bringing up device\n");
+@@ -85,10 +85,12 @@ index 0c13e2a72b..68edd82895 100644
+ +		mac = netdev_priv(eth->netdev[i]);
+ +		unregister_netdevice_notifier(&mac->device_notifier);
+ +	}
 -+	netif_napi_del(&eth->tx_napi);
 -+	netif_napi_del(&eth->rx_napi);
 -+	free_netdev(eth->dummy_dev);

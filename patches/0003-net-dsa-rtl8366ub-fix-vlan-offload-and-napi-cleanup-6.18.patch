@@ -1,15 +1,18 @@
 From: Dimitri Souza <dimitri.souza@gmail.com>
 Date: Sun, 18 Oct 2026 21:37:16 -0300
-Subject: [PATCH] net: dsa: rtl8366ub: fix VLAN offload and NAPI cleanup (6.18)
+Subject: [PATCH] net: dsa: rtl8366ub: fix VLAN offload and NAPI cleanup (6.18, r13-form)
 
 Reject PPE offload for VLAN-aware RTL8366UB bridges and clean up QDMA
 notifiers if dummy NAPI device allocation fails.
 
-Upstream (dmsza/openwrt 8fbeeb6, 2026-10-19) targets the 6.12 patch
-series. This is the 6.18 adaptation for the master profile: kernel 6.18
-already carries the push_vid plumbing via pending-6.18/795-07/795-09,
-so the include and caller hunks are new hunks here and line numbers are
-adjusted accordingly.
+Functional content is upstream dmsza/openwrt 8fbeeb6 (2026-10-19), but
+the carrier form is adapted to THIS tree: upstream's companion commit
+b669f86d rewrote the 795-12 hunk context against openwrt main's kernel,
+which does NOT apply to the pinned ImmortalWrt baseline (kernel 6.18.52
++ this tree's patch stack - CI run 40059954094 failed at that hunk).
+The r13-proven original hunk form is kept and only the two functional
+changes are folded in; the 795-11 hunks (VLAN-aware bridge rejection)
+are carried over verbatim from the CI-validated attempt.
 
 Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>
 Assisted-by: GitHub Copilot
@@ -75,18 +78,10 @@ diff --git a/target/linux/generic/pending-6.18/795-11-net-dsa-rtl8366ub-8021q-pp
   	if (dsa_port >= 0) {
  -		if (push_vid)
 diff --git a/target/linux/generic/pending-6.18/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch b/target/linux/generic/pending-6.18/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch
+index 2547e36..393113b 100644
 --- a/target/linux/generic/pending-6.18/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch
 +++ b/target/linux/generic/pending-6.18/795-12-net-mediatek-init-dummy-napi-before-netdev-registration.patch
-@@ -17,7 +17,7 @@ diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
- index 0c13e2a72b..68edd82895 100644
- --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
- +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
--@@ -5725,60 +5725,65 @@
-+@@ -5725,60 +5725,67 @@
-  
-  			if (!eth->ppe[i]) {
-  				err = -ENOMEM;
-@@ -38,7 +38,7 @@ index 0c13e2a72b..68edd82895 100644
+@@ -29,7 +29,7 @@ index 0c13e2a72b..68edd82895 100644
  +	if (!eth->dummy_dev) {
  +		err = -ENOMEM;
  +		dev_err(eth->dev, "failed to allocated dummy device\n");
@@ -95,10 +90,19 @@ diff --git a/target/linux/generic/pending-6.18/795-12-net-mediatek-init-dummy-na
  +	}
  +	eth->dummy_dev->threaded = 1;
  +	strcpy(eth->dummy_dev->name, "mtk_eth");
-@@ -81,10 +81,12 @@ index 0c13e2a72b..68edd82895 100644
-  
-  err_unreg_netdev:
-  	mtk_unreg_dev(eth);
+@@ -39,7 +39,7 @@ index 0c13e2a72b..68edd82895 100644
+  	for (i = 0; i < MTK_MAX_DEVS; i++) {
+  		if (!eth->netdev[i])
+  			continue;
+-@@ -5836,35 +5851,35 @@ static int mtk_probe(struct platform_device *pdev)
++@@ -5836,35 +5851,37 @@ static int mtk_probe(struct platform_device *pdev)
+  		err = register_netdev(eth->netdev[i]);
+  		if (err) {
+  			dev_err(eth->dev, "error bringing up device\n");
+@@ -85,10 +85,12 @@ index 0c13e2a72b..68edd82895 100644
+ +		mac = netdev_priv(eth->netdev[i]);
+ +		unregister_netdevice_notifier(&mac->device_notifier);
+ +	}
 -+	netif_napi_del(&eth->tx_napi);
 -+	netif_napi_del(&eth->rx_napi);
 -+	free_netdev(eth->dummy_dev);
