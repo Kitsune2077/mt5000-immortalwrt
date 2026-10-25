@@ -15,7 +15,10 @@
 
 # --- Theme ---
 # argon 3.0.0+ has its settings page built into the theme package;
-# the standalone luci-app-argon-config was removed upstream (ebc4118b7)
+# the standalone luci-app-argon-config was removed upstream (ebc4118b7).
+# NOTE (25.12): the openwrt-25.12 luci feed still ships argon 2.4.7 with
+# no settings UI (and no argon-config app on that branch); the workflow
+# overlays luci master's theme 3.x onto feeds/luci for that profile.
 CONFIG_PACKAGE_luci-theme-argon=y
 
 # --- Disk management ---

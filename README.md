@@ -124,7 +124,9 @@ odhcpd 的默认 O 标志会让客户端以为"还有 DHCPv6 可以问 DNS",徒�
 - `enable_quickstart=true` 时额外编入 **luci-app-quickstart**(iStoreOS 风格首页/
   网络向导,见选项表;LuCI 菜单进入「向导」/Quickstart,也可自行设为默认首页)
 - LuCI 应用精选清单(`luci_extra_apps`,全部官方源):
-  argon 主题(3.0.0 起设置页内置,不再有独立配置应用)、diskman(含 btrfs/lsblk)、openclash、
+  argon 主题(3.0.0 起设置页内置,不再有独立配置应用;25.12 基线的 luci feed
+  仍为 2.4.7 且无设置页,构建时由 workflow 用 luci master 的 3.x 覆盖注入,
+  见「维护说明」)、diskman(含 btrfs/lsblk)、openclash、
   rclone(含 webui/ng)、ttyd、upnp、luci-compat(passwall 已注释停用,
   需要时去掉 `config/luci-extra.seed` 中的注释即可)
 - rootfs 2048MB;首启自动清理会 404 的 apk 源行
@@ -257,6 +259,12 @@ Run workflow 时填写:
   QDMA notifier,清理路径加 `if (eth->dummy_dev)` 防护
 - 改编译配置:编辑 `config/mt5000.seed`(menuconfig 风格种子,defconfig 展开;
   workflow 的输入项会动态覆盖其中的 IP/分区大小/语言)
+- argon 主题版本:master 配置档直接用 luci feed master 的 3.x;25.12 配置档
+  的 openwrt-25.12 luci feed 仍是 2.4.7(无设置页,该分支也没有独立的
+  argon-config 应用),workflow 在 feeds update 后把 luci master 的主题包
+  覆盖注入 `feeds/luci` 并校验覆盖后版本为 3.x(3.0 的 `ucode-mod-math`
+  依赖在 25.12 基线已具备)。上游把 argon 3.x 回移 openwrt-25.12 luci 分支
+  后,删除 workflow 中 "25.12 argon overlay" 那段即可
 - 改首启行为:输入项之外的固化定制放 `files/etc/uci-defaults/`;
   IPv6 那套 uci 写入由 workflow 里 `enable_ipv6` 分支生成 `99-ipv6`,
   要加别的 IPv6 项直接改 workflow 那段即可

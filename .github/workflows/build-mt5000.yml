@@ -334,6 +334,23 @@ jobs:
             done
           fi
           ./scripts/feeds update -a
+          # 25.12 profile: the openwrt-25.12 luci feed still ships argon
+          # 2.4.7 (no settings UI; the standalone argon-config app does not
+          # exist on that branch either). Overlay luci master's theme (3.x,
+          # settings built into the theme) so both profiles get the same
+          # configurable theme. Remove this block once upstream backports
+          # argon 3.x to the openwrt-25.12 luci feed.
+          if [ "$IWRT_PROFILE" = "25.12" ]; then
+            git -C feeds/luci fetch --depth 1 origin master
+            rm -rf feeds/luci/themes/luci-theme-argon
+            git -C feeds/luci checkout FETCH_HEAD -- themes/luci-theme-argon
+            ARGON_V=$(sed -n 's/^PKG_VERSION:=//p' feeds/luci/themes/luci-theme-argon/Makefile)
+            echo "25.12 argon overlay: luci master luci-theme-argon $ARGON_V"
+            case "$ARGON_V" in
+              [3-9].*) ;;
+              *) echo "::error::argon 覆盖后版本非 3.x: '$ARGON_V' (luci master 主题包路径/结构变动? 请核对)"; exit 1 ;;
+            esac
+          fi
           ./scripts/feeds install -a
           if [ "$ENABLE_STORE" = "true" ] || [ "$ENABLE_QUICKSTART" = "true" ]; then
             ./scripts/feeds install -d y -p istore luci-app-store
