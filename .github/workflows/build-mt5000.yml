@@ -304,6 +304,9 @@ jobs:
           # master : patches/ = openwrt PR #24237 head (0001 设备支持本体)
           #         + 该 PR 的审阅反馈修复 (0002, 自 dmsza/openwrt 移植)
           #         + 795-12 内核补丁上下文修复 (0003, dmsza b669f86d)
+          #         + 交换机初始化强化 + BPDU/IGMP/MLD 陷阱到 CPU (0004,
+          #           PR head 89a10ec, 2026-10-26 真机复测通过; 795-11 PPE
+          #           卸载重构暂缓, 等 PEPITO82 复位 bug 复测有结论)
           # 25.12 : patches-25.12/ = dmsza/openwrt "[25.12] add support for
           #         GL.iNet GL-MT5000" (现为 af67b61, 审阅修复已并入; 为适配
           #         ImmortalWrt 树已剔除仅涉及 jiorouter 设备的 hunk,

@@ -281,7 +281,7 @@ Run workflow 时填写:
   (ImmortalWrt `openwrt-25.12` 分支 HEAD @2026-10-24,内核 6.12,已并入上游
   25.12.x(.6 世代)修复——ImmortalWrt 尚无 v25.12.3+ tag,故 pin 分支提交;
   补丁在 `patches-25.12/`)。`iwrt_ref` 显式填写时优先,但需自行确保对应补丁能套用。
-  跟进上游时:master 改基线需重验 `patches/0001~0003`;25.12 可跟进新 tag(如
+  跟进上游时:master 改基线需重验 `patches/0001~0004`;25.12 可跟进新 tag(如
   `v25.12.3`)或 dmsza 上游分支更新,补丁套用失败时 Action 会明确报错,基于新基线
   重新生成 `patches-25.12/0001-*.patch` 即可(源自
   [dmsza/openwrt](https://github.com/dmsza/openwrt) 的 `[25.12]` 回移 commit

@@ -1,0 +1,207 @@
+From: Tao Luo <tao.luo@gl-inet.com>
+Date: Sun, 26 Oct 2026 13:01:53 +0000
+Subject: [PATCH] net: dsa: rtl8366ub: harden switch init and trap BPDU/IGMP/MLD to CPU (6.18, 89a10ec-form)
+
+Adopt the switch-init and control-frame handling from openwrt PR #24237
+head 89a10ec (2026-10-26 force-push; dmtpascoal review round, all points
+addressed, real-hardware retest passed):
+
+- switch_init: VLAN 1 becomes IVL and empty; every port admits tagged
+  frames only and starts at PVID 0, so no data VLAN is reachable through
+  a default PVID. This supersedes the CPU-port-only tagged-only
+  workaround carried in 0002.
+- Trap BPDUs and IGMP/MLD to the CPU so STP and bridge multicast
+  snooping see the ingress port through the 8021q CPU tag; ordinary
+  multicast data keeps using the hardware MDB.
+- CPU tag: insert the tag only on trapped frames and keep the standard
+  EtherType on data frames (PPE offload depends on it), and accept
+  control frames padded to 64 bytes.
+
+Functional content is upstream 89a10ec; the carrier form is re-indented
+to THIS tree's 4-space driver style and applies to the pinned
+ImmortalWrt baseline (kernel 6.18.52). The PPE-offload redesign in the
+same revision (mtk_ppe_offload tag-mode classification) is deliberately
+not ported yet; 0003's VLAN-aware bridge rejection stays.
+
+Adapted-by: Kitsune <km2077@foxmail.com>
+Signed-off-by: Tao Luo <tao.luo@gl-inet.com>
+---
+diff --git a/target/linux/generic/pending-6.18/795-10-net-dsa-realtek-add-rtl8366ub.patch b/target/linux/generic/pending-6.18/795-10-net-dsa-realtek-add-rtl8366ub.patch
+index 7e8ab5a..41b0cfd 100644
+--- a/target/linux/generic/pending-6.18/795-10-net-dsa-realtek-add-rtl8366ub.patch
++++ b/target/linux/generic/pending-6.18/795-10-net-dsa-realtek-add-rtl8366ub.patch
+@@ -133,7 +133,7 @@ new file mode 100644
+ index 0000000..4261f69
+ --- /dev/null
+ +++ b/drivers/net/dsa/realtek/rtl8366ub_cpu.c
+-@@ -0,0 +1,290 @@
++@@ -0,0 +1,298 @@
+ +// SPDX-License-Identifier: GPL-2.0
+ +
+ +#include <linux/bitfield.h>
+@@ -179,6 +179,9 @@ index 0000000..4261f69
+ +#define RTL8366UB_CPU_TAG_FIELDS_MASK    (RTL8366UB_CPU_TAG_FORMAT_MASK | \
+ +                                          RTL8366UB_CPU_TAG_ROUTE_MASK)
+ +#define RTL8366UB_CPU_TAG_ENABLE         BIT(0)
+++#define RTL8366UB_CPU_TAG_INSERT_MASK    GENMASK(2, 1)
+++#define RTL8366UB_CPU_TAG_INSERT_TRAPPED 1
+++#define RTL8366UB_CPU_TAG_RX_64_BYTES    BIT(7)
+ +#define RTL8366UB_CPU_TAG_TRAP_MASK      GENMASK(5, 3)
+ +
+ +struct rtl8366ub_sds_patch {
+@@ -418,7 +421,12 @@ index 0000000..4261f69
+ +        return ret;
+ +
+ +    ctrl &= ~RTL8366UB_CPU_TAG_FIELDS_MASK;
+++    /* Preserve the standard EtherType on normal data frames for PPE. */
+ +    ctrl |= RTL8366UB_CPU_TAG_ENABLE;
+++    ctrl |= FIELD_PREP(RTL8366UB_CPU_TAG_INSERT_MASK,
+++                       RTL8366UB_CPU_TAG_INSERT_TRAPPED);
+++    /* Short control frames can be padded to 64 bytes including the tag. */
+++    ctrl |= RTL8366UB_CPU_TAG_RX_64_BYTES;
+ +    ctrl |= FIELD_PREP(RTL8366UB_CPU_TAG_TRAP_MASK,
+ +                       info->physical_port & 7);
+ +
+@@ -429,7 +437,7 @@ new file mode 100644
+ index 0000000..c4752f2
+ --- /dev/null
+ +++ b/drivers/net/dsa/realtek/rtl8366ub_dsa.c
+-@@ -0,0 +1,1002 @@
++@@ -0,0 +1,993 @@
+ +// SPDX-License-Identifier: GPL-2.0
+ +/*
+ + * This is a sparsely documented chip, the only viable documentation seems
+@@ -714,10 +722,10 @@ index 0000000..c4752f2
+ +    if (ret)
+ +        return ret;
+ +
+-+    ret = rtl8366ub_cpu_tag_disable(priv, priv->cpu_port);
+++    ret = rtl8366ub_cpu_tag_enable(priv, priv->cpu_port);
+ +    if (ret)
+ +        return dev_err_probe(priv->dev, ret,
+-+                             "failed to disable RTL8_4 CPU tagging\n");
+++                             "failed to enable trapped-frame CPU tagging\n");
+ +
+ +    ret = rtl8366ub_vlan_set_egress_original(priv, priv->cpu_port);
+ +    if (ret)
+@@ -729,15 +737,6 @@ index 0000000..c4752f2
+ +        return dev_err_probe(priv->dev, ret,
+ +                             "failed to clear CPU VLAN egress overrides\n");
+ +
+-+    /* Every frame the tagger emits is VLAN-tagged; never classify a
+-+     * stray untagged conduit frame by the CPU PVID (cf. sja1105
+-+     * drop_untagged on CPU/DSA ports).
+-+     */
+-+    ret = rtl8366ub_vlan_set_accept_tagged_only(priv, priv->cpu_port, true);
+-+    if (ret)
+-+        return dev_err_probe(priv->dev, ret,
+-+                             "failed to set CPU port tagged-only\n");
+-+
+ +    ret = rtl8366ub_vlan_get_egress_mode(priv, priv->cpu_port,
+ +                                         &egress_mode);
+ +    if (ret)
+@@ -2822,7 +2821,7 @@ new file mode 100644
+ index 0000000..bf40d83
+ --- /dev/null
+ +++ b/drivers/net/dsa/realtek/rtl8366ub_switch.c
+-@@ -0,0 +1,433 @@
++@@ -0,0 +1,474 @@
+ +// SPDX-License-Identifier: GPL-2.0
+ +
+ +#include <linux/bitfield.h>
+@@ -2859,6 +2858,13 @@ index 0000000..bf40d83
+ +#define RTL8366UB_VLAN_ACCEPT_MASK        GENMASK(1, 0)
+ +#define RTL8366UB_VLAN_ACCEPT_ALL         0
+ +#define RTL8366UB_VLAN_ACCEPT_TAGGED_ONLY 1
+++#define RTL8366UB_RMA_BPDU_REG            0x3150
+++#define RTL8366UB_RMA_OPERATION_MASK      GENMASK(8, 7)
+++#define RTL8366UB_RMA_TRAP                1
+++#define RTL8366UB_IGMP_PORT_BASE          0x35a2
+++#define RTL8366UB_IGMP_PORT_STRIDE        2
+++#define RTL8366UB_IGMP_PORT_OP_MASK       GENMASK(9, 0)
+++#define RTL8366UB_IGMP_PORT_TRAP          0x02aa
+ +#define RTL8366UB_IGMP_CTRL_REG           0x35a0
+ +#define RTL8366UB_IGMP_MLD_VLAN_LEAKY     BIT(14)
+ +#define RTL8366UB_IPMC_VLAN_LEAKY_REG     0x31b4
+@@ -3213,19 +3219,49 @@ index 0000000..bf40d83
+ +                                        mask, state << (physical * 2));
+ +}
+ +
+++/* Trap BPDUs and all supported IGMP/MLD versions so the native CPU
+++ * tag supplies the ingress port to STP and bridge multicast snooping.
+++ * Ordinary multicast data continues to use the hardware MDB.
+++ */
+++static int rtl8366ub_control_traps_setup(struct rtl8366ub_priv *priv)
+++{
+++    const struct rtl8366ub_port_info *info;
+++    u16 reg;
+++    int port;
+++    int ret;
+++
+++    ret = rtl8366ub_switch_update_bits(priv, RTL8366UB_RMA_BPDU_REG,
+++                                       RTL8366UB_RMA_OPERATION_MASK,
+++                                       FIELD_PREP(RTL8366UB_RMA_OPERATION_MASK,
+++                                                  RTL8366UB_RMA_TRAP));
+++    if (ret)
+++        return ret;
+++
+++    for (port = 0; port < RTL8366UB_NUM_PORTS; port++) {
+++        info = rtl8366ub_get_port_info(port);
+++        reg = RTL8366UB_IGMP_PORT_BASE +
+++              info->physical_port * RTL8366UB_IGMP_PORT_STRIDE;
+++        ret = rtl8366ub_switch_update_bits(priv, reg,
+++                                           RTL8366UB_IGMP_PORT_OP_MASK,
+++                                           RTL8366UB_IGMP_PORT_TRAP);
+++        if (ret)
+++            return ret;
+++    }
+++
+++    return 0;
+++}
+++
+ +int rtl8366ub_switch_init(struct rtl8366ub_priv *priv)
+ +{
+ +    struct rtl8366ub_vlan vlan = {
+-+        /* No data VLAN may be reachable through a default PVID; the
+-+         * bridge's default_pvid 1 populates this per port.
+-+         */
+-+        .member = 0,
+-+        .untag = 0,
+-+        .ivl = false,
+++        .ivl = true,
+ +    };
+ +    int port;
+ +    int ret;
+ +
+++    /* DSA installs both management and bridge VLAN memberships. Do not
+++     * retain an all-port VLAN 1 or let CPU traffic inherit its PVID.
+++     */
+ +    ret = rtl8366ub_vlan_set(priv, 1, &vlan);
+ +    if (ret)
+ +        return ret;
+@@ -3233,10 +3269,10 @@ index 0000000..bf40d83
+ +    for (port = 0; port <= RTL8366UB_MAX_LOGICAL_PORT; port++) {
+ +        if (!rtl8366ub_get_port_info(port))
+ +            continue;
+-+        ret = rtl8366ub_vlan_set_pvid(priv, port, 1);
+++        ret = rtl8366ub_vlan_set_accept_tagged_only(priv, port, true);
+ +        if (ret)
+ +            return ret;
+-+        ret = rtl8366ub_vlan_set_accept_tagged_only(priv, port, false);
+++        ret = rtl8366ub_vlan_set_pvid(priv, port, 0);
+ +        if (ret)
+ +            return ret;
+ +        ret = rtl8366ub_vlan_set_egress_original(priv, port);
+@@ -3254,7 +3290,11 @@ index 0000000..bf40d83
+ +    if (ret)
+ +        return ret;
+ +
+-+    return rtl8366ub_vlan_disable_leaky(priv);
+++    ret = rtl8366ub_vlan_disable_leaky(priv);
+++    if (ret)
+++        return ret;
+++
+++    return rtl8366ub_control_traps_setup(priv);
+ +}
+ diff --git a/drivers/net/dsa/realtek/rtl8366ub_table.c b/drivers/net/dsa/realtek/rtl8366ub_table.c
+ new file mode 100644
