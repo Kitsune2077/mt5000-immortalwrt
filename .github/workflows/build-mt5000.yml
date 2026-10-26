@@ -75,16 +75,16 @@ on:
         required: false
         default: false
         type: boolean
-      include_docker:
-        description: '集成 Docker 及 Dockerman 管理界面'
+      extra_services:
+        description: '附加服务: none=都不装; mwan3=多线管理(LuCI 网络→Multi WAN, 编入时自动只接管 IPv4, 不影响 IPv6); docker=Docker+Dockerman; docker+mwan3=两者都装'
         required: false
-        default: false
-        type: boolean
-      enable_mwan3:
-        description: '集成 mwan3 多线管理 (LuCI: 网络→Multi WAN; 编入时自动打上"仅接管 IPv4"修复, 避免其默认策略把 IPv6 流量打标成 unreachable 导致有地址上不了网)'
-        required: false
-        default: false
-        type: boolean
+        default: 'none'
+        type: choice
+        options:
+          - 'none'
+          - 'mwan3'
+          - 'docker'
+          - 'docker+mwan3'
       pppoe:
         description: '预置 PPPoE 拨号 (WAN 口 eth1)'
         required: false
@@ -190,8 +190,7 @@ jobs:
       DOONA_VERSION: '0.1.0-beta.12'
       DOONA_TARBALL_SHA256: '5f11ab90da1794e6f03ff4001af00d35be47e564486f747984f1b3b82e101261'
       HONK_CORE_SHA256: 'e9ae1d6f27bcc948e6ea32e6267984c2830db94fad274ff5afca169fbf210044'
-      INCLUDE_DOCKER: ${{ github.event.inputs.include_docker }}
-      ENABLE_MWAN3: ${{ github.event.inputs.enable_mwan3 || 'false' }}
+      EXTRA_SERVICES: ${{ github.event.inputs.extra_services || 'none' }}
       PPPOE: ${{ github.event.inputs.pppoe }}
       PPPOE_USERNAME: ${{ github.event.inputs.pppoe_username }}
       PPPOE_PASSWORD: ${{ github.event.inputs.pppoe_password }}
@@ -262,6 +261,15 @@ jobs:
           if [ "$BAKE_DOONA" = "true" ] && [ "$BAKE_DAEDE" = "true" ]; then
             echo "::error::bake_doona 与 bake_daede 互斥 (honk 与 dae 同抢 eBPF TC 挂钩, 不能同时运行)"; exit 1
           fi
+          # 附加服务 (workflow_dispatch 最多 25 个输入, docker/mwan3 合并成一个选择项)
+          case "$EXTRA_SERVICES" in
+            none|mwan3|docker|docker+mwan3) ;;
+            *) echo "::error::非法 extra_services: $EXTRA_SERVICES (可选 none/mwan3/docker/docker+mwan3)"; exit 1 ;;
+          esac
+          case "$EXTRA_SERVICES" in *docker*) INCLUDE_DOCKER=true ;; *) INCLUDE_DOCKER=false ;; esac
+          case "$EXTRA_SERVICES" in *mwan3*)  ENABLE_MWAN3=true  ;; *) ENABLE_MWAN3=false  ;; esac
+          printf 'INCLUDE_DOCKER=%s\nENABLE_MWAN3=%s\n' "$INCLUDE_DOCKER" "$ENABLE_MWAN3" >> "$GITHUB_ENV"
+          echo "::notice::附加服务: $EXTRA_SERVICES (docker=$INCLUDE_DOCKER, mwan3=$ENABLE_MWAN3)"
           if [ "$ENABLE_IPV6" = "true" ]; then
             case "$LAN_IPV6_ASSIGN" in
               56|60|64|disabled) ;;
@@ -436,7 +444,7 @@ jobs:
               'CONFIG_PACKAGE_luci-app-dockerman=y' >> .config
           fi
 
-          # mwan3 (opt-in). 编入时同时生成首启修复脚本 99-mwan3-ipv4:
+          # mwan3 (extra_services 含 mwan3 时). 编入时同时生成首启修复脚本 99-mwan3-ipv4:
           # mwan3 自带 default_rule_v6 -> balanced 策略, 而 balanced 没有 IPv6
           # 成员时会给每个 IPv6 包打上 unreachable 标记(ip -6 rule fwmark
           # 0x3e00/0x3f00 unreachable), 路由器与下游设备的 IPv6 全部
@@ -471,7 +479,7 @@ jobs:
           done
           if [ "$ENABLE_MWAN3" = "true" ]; then
             for U in mwan3 luci-app-mwan3; do
-              grep -qE "^CONFIG_PACKAGE_${U}=y" .config || { echo "::error::多线管理组件缺失: $U (enable_mwan3=true 但未编入?)"; exit 1; }
+              grep -qE "^CONFIG_PACKAGE_${U}=y" .config || { echo "::error::多线管理组件缺失: $U (extra_services 含 mwan3 但未编入?)"; exit 1; }
             done
           fi
           grep -qE '^CONFIG_PACKAGE_(luci|luci-light)=y' .config      || { echo "::error::LuCI 套件未生效 (luci_flavor)"; exit 1; }
@@ -690,7 +698,7 @@ jobs:
           if [ "$ENABLE_MWAN3" = "true" ]; then
             cat > "$UD/99-mwan3-ipv4" <<'EOF'
           #!/bin/sh
-          # mwan3 默认配置会破坏 IPv6 (见上面 enable_mwan3 处的说明):
+          # mwan3 默认配置会破坏 IPv6 (见上面的说明):
           #   mwan3.default_rule_v6 -> balanced 策略(无 IPv6 成员)
           #   -> IPv6 包被打 fwmark 0x3e00 -> ip -6 rule unreachable -> 全网 IPv6 不通
           # 修复: 让 mwan3 的规则只作用于 IPv4, 删掉 IPv6 默认规则。
