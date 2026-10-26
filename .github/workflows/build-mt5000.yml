@@ -80,6 +80,11 @@ on:
         required: false
         default: false
         type: boolean
+      enable_mwan3:
+        description: '集成 mwan3 多线管理 (LuCI: 网络→Multi WAN; 编入时自动打上"仅接管 IPv4"修复, 避免其默认策略把 IPv6 流量打标成 unreachable 导致有地址上不了网)'
+        required: false
+        default: false
+        type: boolean
       pppoe:
         description: '预置 PPPoE 拨号 (WAN 口 eth1)'
         required: false
@@ -186,6 +191,7 @@ jobs:
       DOONA_TARBALL_SHA256: '5f11ab90da1794e6f03ff4001af00d35be47e564486f747984f1b3b82e101261'
       HONK_CORE_SHA256: 'e9ae1d6f27bcc948e6ea32e6267984c2830db94fad274ff5afca169fbf210044'
       INCLUDE_DOCKER: ${{ github.event.inputs.include_docker }}
+      ENABLE_MWAN3: ${{ github.event.inputs.enable_mwan3 || 'false' }}
       PPPOE: ${{ github.event.inputs.pppoe }}
       PPPOE_USERNAME: ${{ github.event.inputs.pppoe_username }}
       PPPOE_PASSWORD: ${{ github.event.inputs.pppoe_password }}
@@ -430,6 +436,17 @@ jobs:
               'CONFIG_PACKAGE_luci-app-dockerman=y' >> .config
           fi
 
+          # mwan3 (opt-in). 编入时同时生成首启修复脚本 99-mwan3-ipv4:
+          # mwan3 自带 default_rule_v6 -> balanced 策略, 而 balanced 没有 IPv6
+          # 成员时会给每个 IPv6 包打上 unreachable 标记(ip -6 rule fwmark
+          # 0x3e00/0x3f00 unreachable), 路由器与下游设备的 IPv6 全部
+          # ENETUNREACH(症状: 有公网 IPv6 地址但上不了 IPv6 网站)。
+          if [ "$ENABLE_MWAN3" = "true" ]; then
+            printf '%s\n' \
+              'CONFIG_PACKAGE_mwan3=y' \
+              'CONFIG_PACKAGE_luci-app-mwan3=y' >> .config
+          fi
+
           if [ "$LUCI_EXTRA_APPS" != "false" ] && [ "$LUCI_EXTRA_APPS" != "" ]; then
             # curated LuCI app list (all stock-feed packages)
             cat ../config/luci-extra.seed >> .config
@@ -449,9 +466,14 @@ jobs:
           grep -qE 'CONFIG_KERNEL_DEBUG_INFO_BTF=y' .config            || { echo "::error::内核 BTF 缺失"; exit 1; }
           grep -qE 'CONFIG_PACKAGE_luci-app-run=y' .config             || { echo "::error::luci-app-run 缺失 (wkd feed 安装失败?)"; exit 1; }
           # USB 网络(网卡/4G/5G 转接板/手机共享)关键符号抽查
-          for U in kmod-usb3 kmod-usb-net-qmi-wwan kmod-usb-net-cdc-mbim kmod-usb-net-cdc-ncm kmod-usb-net-rndis kmod-usb-net-ipheth kmod-usb-net-rtl8152 mwan3 luci-app-mwan3; do
-            grep -qE "^CONFIG_PACKAGE_${U}=y" .config || { echo "::error::USB 网络/多线管理组件缺失: $U (包名变动? 请核对 config/mt5000.seed)"; exit 1; }
+          for U in kmod-usb3 kmod-usb-net-qmi-wwan kmod-usb-net-cdc-mbim kmod-usb-net-cdc-ncm kmod-usb-net-rndis kmod-usb-net-ipheth kmod-usb-net-rtl8152; do
+            grep -qE "^CONFIG_PACKAGE_${U}=y" .config || { echo "::error::USB 网络组件缺失: $U (包名变动? 请核对 config/mt5000.seed)"; exit 1; }
           done
+          if [ "$ENABLE_MWAN3" = "true" ]; then
+            for U in mwan3 luci-app-mwan3; do
+              grep -qE "^CONFIG_PACKAGE_${U}=y" .config || { echo "::error::多线管理组件缺失: $U (enable_mwan3=true 但未编入?)"; exit 1; }
+            done
+          fi
           grep -qE '^CONFIG_PACKAGE_(luci|luci-light)=y' .config      || { echo "::error::LuCI 套件未生效 (luci_flavor)"; exit 1; }
           grep -qE '^CONFIG_PACKAGE_uhttpd=y' .config                 || { echo "::error::uhttpd 缺失: LuCI 无 Web 服务器, 管理页面将无法访问"; exit 1; }
           grep -q "CONFIG_TARGET_PREINIT_IP=\"$LAN_IP\"" .config       || { echo "::error::LAN IP 未生效"; exit 1; }
@@ -655,6 +677,34 @@ jobs:
             [ -s "$IU" ] || { echo "::error::99-ipv6 未生成"; exit 1; }
           fi
 
+          # mwan3 (opt-in): 只让它接管 IPv4, 否则它的默认策略会把 IPv6 打死。
+          # 背景: mwan3 自带配置里 default_rule_v6 指向 balanced 策略, 而
+          # balanced 只有 IPv4 成员; mwan3 对"策略里没有可用成员"的处理是
+          # last_resort unreachable -> 每个 IPv6 包被打上 fwmark 0x3e00,
+          # 命中 ip6 rule "fwmark 0x3e00/0x3f00 unreachable"(优先级 2062,
+          # 先于 main 表), 路由器自身与下游设备的 IPv6 全部 ENETUNREACH。
+          # 现象就是"下游能拿到公网 IPv6 地址, 但访问不了 IPv6 网站",
+          # 且 IPv4 完全正常; odhcpd 侧还会因看不到可路由默认路由而把 RA
+          # 的 router lifetime 置 0。
+          # https 规则没写 family, 默认 v4/v6 都会装; 这里限定为 IPv4。
+          if [ "$ENABLE_MWAN3" = "true" ]; then
+            cat > "$UD/99-mwan3-ipv4" <<'EOF'
+          #!/bin/sh
+          # mwan3 默认配置会破坏 IPv6 (见上面 enable_mwan3 处的说明):
+          #   mwan3.default_rule_v6 -> balanced 策略(无 IPv6 成员)
+          #   -> IPv6 包被打 fwmark 0x3e00 -> ip -6 rule unreachable -> 全网 IPv6 不通
+          # 修复: 让 mwan3 的规则只作用于 IPv4, 删掉 IPv6 默认规则。
+          # 若将来真的要 mwan3 管 IPv6, 需要建 family ipv6 的接口/成员/策略,
+          # 仅 uci set mwan3.wan6.enabled='1' 是不够的。
+          [ -n "$(uci -q get mwan3.https)" ] && uci -q set mwan3.https.family='ipv4'
+          uci -q delete mwan3.default_rule_v6
+          uci -q commit mwan3
+          exit 0
+          EOF
+            chmod 755 "$UD/99-mwan3-ipv4"
+            [ -s "$UD/99-mwan3-ipv4" ] || { echo "::error::99-mwan3-ipv4 未生成"; exit 1; }
+          fi
+
           chmod 755 "$UD"/99-*
           ls -la "$UD"/
 
@@ -780,6 +830,7 @@ jobs:
           [ "$BAKE_DAEDE" = "true" ]   && DAEDE_OPT='编入固件(600s 超时补丁)' || DAEDE_OPT='运行时安装(默认)'
           if [ "$BAKE_DOONA" = "true" ]; then DOONA_OPT="已编入 (doona + honk v$DOONA_VERSION, alpha 实验性)"; else DOONA_OPT='未编入'; fi
           [ "$INCLUDE_DOCKER" = "true" ] && DOCKER_OPT='已集成' || DOCKER_OPT='未集成'
+          if [ "$ENABLE_MWAN3" = "true" ]; then MWAN3_OPT='已集成 (仅接管 IPv4; 已打 IPv6 防打标修复)'; else MWAN3_OPT='未集成'; fi
           if [ "$LUCI_EXTRA_APPS" != "false" ] && [ "$LUCI_EXTRA_APPS" != "" ]; then LUCI_EXTRA_OPT='已集成(argon 主题/diskman/openclash/rclone/ttyd/upnp; passwall 已注释停用)'; else LUCI_EXTRA_OPT='未集成'; fi
           if [ "$ENABLE_QUICKSTART" = "true" ]; then QS_OPT='已集成 (iStoreOS 风格首页/向导)'; else QS_OPT='未集成'; fi
           if [ "$PPPOE" = "true" ]; then PPPOE_OPT="已预置 (账号密码不显示)"; else PPPOE_OPT='未预置 (DHCP)'; fi
@@ -816,6 +867,7 @@ jobs:
             echo "| daede 代理 | $DAEDE_OPT |"
             echo "| doona/honk | $DOONA_OPT |"
             echo "| Docker | $DOCKER_OPT |"
+            echo "| mwan3 多线 | $MWAN3_OPT |"
             echo "| PPPoE | $PPPOE_OPT |"
             echo "| IPv6 | $IPV6_OPT |"
             echo "| 主机名 | $HOSTNAME |"
@@ -831,7 +883,9 @@ jobs:
             echo "- autocore 状态页(CPU 型号/频率/温度)"
             echo "- luci-app-run 网页上传/运行安装器(必装, 支持 .run/.sh/.ipk/.apk)"
             echo "- USB 口网络全家桶:USB 网卡(RTL815x/AX88179/ASIX/LAN78xx)、4G/5G 转接板(QMI/MBIM/NCM+串口)、手机 USB 共享(安卓 RNDIS/NCM、iPhone)"
-            echo "- mwan3 多线管理(有线/随身WiFi/手机共享 优先级与故障转移, LuCI「网络→Multi WAN」)"
+            if [ "$ENABLE_MWAN3" = "true" ]; then
+              echo "- mwan3 多线管理(有线/随身WiFi/手机共享 优先级与故障转移, LuCI「网络→Multi WAN」; 已限定只接管 IPv4, 不会影响 IPv6)"
+            fi
             echo "- 随身WiFi/USB网卡即插即用: 插入自动建接口+挂防火墙(metric=50 默认备份线, 零点击)"
             echo "- 首启自动清理会 404 的 apk 软件源"
             echo ""

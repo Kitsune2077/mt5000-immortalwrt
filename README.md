@@ -24,6 +24,7 @@
 | `bake_daede` | 将 daede(dae/daed)编译进固件 | `false` |
 | `bake_doona` | 编入 doona+honk(daed 归档后的新一代 Web UI + Rust eBPF 引擎;alpha 实验性,与 `bake_daede` 互斥;内核需 >=6.12,两配置档均满足) | `false` |
 | `include_docker` | 集成 Docker + Dockerman 管理界面 | `false` |
+| `enable_mwan3` | 集成 mwan3 多线管理(LuCI 网络→Multi WAN;**编入时自动打上"仅接管 IPv4"修复**,见下文) | `false` |
 | `pppoe` | 预置 PPPoE 拨号(WAN = eth1) | `false` |
 | `pppoe_username` | PPPoE 宽带账号 | 空 |
 | `pppoe_password` | PPPoE 密码(留空则用仓库 Secret) | 空 |
@@ -97,6 +98,64 @@ odhcpd 的默认 O 标志会让客户端以为"还有 DHCPv6 可以问 DNS",徒�
   `autoipv6` 逻辑久已存在),无需额外兼容项
 - 构建时的选项汇总会写进 Release 说明的 `IPv6` 一行,方便回溯某个固件用了哪套参数
 
+## mwan3 与 IPv6(可选组件)
+
+`mwan3` 默认**不编入**,需要时把 `enable_mwan3` 勾成 `true`。
+
+**为什么默认关、而且编入时必须打补丁**:mwan3 自带的默认配置里有一条
+
+```
+config rule 'default_rule_v6'
+	option dest_ip '::/0'
+	option family 'ipv6'
+	option use_policy 'balanced'
+```
+
+而默认的 `balanced` 策略里只有 IPv4 成员(`wan` 是 `family ipv4`,
+`wan6` 是 `enabled 0`)。mwan3 对"策略里没有该协议族的可用成员"的处理是
+`last_resort unreachable`:它会把**每一个 IPv6 包**打上 `fwmark 0x3e00`,
+正好命中 mwan3 自己装的内核规则
+
+```
+2062:	from all fwmark 0x3e00/0x3f00 unreachable
+```
+
+这条 `ip -6 rule` 的优先级 2062 小于 `main` 表的 32766(数值越小越先命中),于是路由器自身和
+**所有下游设备**的 IPv6 流量在路由查找阶段就直接 `ENETUNREACH`。IPv4 走的
+是有成员的策略,完全正常——所以典型症状是"**下游能拿到公网 IPv6 地址,却访问
+不了任何 IPv6 网站**",并且 `ip -6 route show default` 看着有路由也照样报
+`Network is unreachable`。同一条链路还会让 odhcpd 认为"本机没有默认路由",
+进而把 RA 的 router lifetime 发成 0(日志 `No default route present, setting
+ra_lifetime to 0!`),下游连默认网关都拿不到。
+
+所以勾选 `enable_mwan3` 时,构建流程会额外生成首启脚本 `99-mwan3-ipv4`:
+
+```sh
+[ -n "$(uci -q get mwan3.https)" ] && uci -q set mwan3.https.family='ipv4'
+uci -q delete mwan3.default_rule_v6
+uci -q commit mwan3
+```
+
+即**让 mwan3 的规则只作用于 IPv4**(`https` 那条规则原本没写 `family`,
+默认 v4/v6 都会装),mwan3 的健康检查、优先级、故障转移对 IPv4 多线上行
+照常工作,IPv6 交回内核主路由表。
+
+> 要真正让 mwan3 管理 IPv6,不是把 `mwan3.wan6.enabled` 置 `1` 就行:
+> 还得建 `family ipv6` 的接口 + 成员 + 策略(Policy),否则依旧会退回
+> `unreachable`。本项目的默认方案是 mwan3 管 IPv4、IPv6 直连主表。
+
+**遇到"有地址、上不了网"的排查顺序**(确认与 mwan3 有关还是无关):
+
+```sh
+ip -6 rule show                       # 有没有 fwmark 0x3e00/0x3f00 unreachable
+nft list chain ip6 mangle mwan3_rules # 有内容 = mwan3 正在给 IPv6 打标
+ip -6 route get 2400:3200::1          # 报 unreachable 但 ping 正常 = 打标所致
+uci show mwan3 | grep -E 'rule_v6|family'
+```
+
+`ip6 mangle mwan3_rules` 为空、`ip -6 rule` 里那条 2062 虽然仍在但没有包命中,
+就是修好了。
+
 ## 固件内置内容(默认选项下)
 
 - MT5000 设备支持(上游 PR #24237 移植 + 审阅反馈修复)
@@ -114,10 +173,12 @@ odhcpd 的默认 O 标志会让客户端以为"还有 DHCPv6 可以问 DNS",徒�
   wdm 控制口自动探测、APN 默认 `ctnet` 可自行改)、挂入防火墙 wan 区域、
   metric=50 使其默认作为**备份上联**(不抢主 WAN 路由);零点击,
   删除接口后重新插拔即重建;配合 mwan3 可拖入策略设优先级
-- **mwan3 多线管理**(原厂多上网方式管理的等价物):有线 WAN + 随身 WiFi +
+- **mwan3 多线管理**(可选,仅 `enable_mwan3=true` 时编入):有线 WAN + 随身 WiFi +
   手机共享等多条上行同时在线,支持**优先级策略**(如 有线优先、随身 WiFi 备份)
   与**健康检查自动切换**(Ping 探测失败自动切到下一条线);配置入口
-  LuCI「网络 → Multi WAN」;注意每个上行接口需在防火墙 wan 区域或单独区域
+  LuCI「网络 → Multi WAN」;注意每个上行接口需在防火墙 wan 区域或单独区域。
+  编入时首启脚本 `99-mwan3-ipv4` 会把它限定为**只接管 IPv4**(原因见上节
+  「mwan3 与 IPv6」),所以默认不会影响 IPv6
 - 内核 BTF + XDP_SOCKETS(eBPF CO-RE 前置)
 - daede 运行前置依赖全套内置:kmod 五件套 + v2ray geo 数据 + ca-bundle
 - iStore 软件商店
@@ -267,7 +328,9 @@ Run workflow 时填写:
   后,删除 workflow 中 "25.12 argon overlay" 那段即可
 - 改首启行为:输入项之外的固化定制放 `files/etc/uci-defaults/`;
   IPv6 那套 uci 写入由 workflow 里 `enable_ipv6` 分支生成 `99-ipv6`,
-  要加别的 IPv6 项直接改 workflow 那段即可
+  要加别的 IPv6 项直接改 workflow 那段即可;
+  mwan3 的 IPv4-only 修复由 `enable_mwan3` 分支生成 `99-mwan3-ipv4`
+  (mwan3 默认配置会打标 IPv6,细节见「mwan3 与 IPv6」一节)
 - 提速:`dl/` 缓存已按选项组合分键;可再加 ccache(seed 加
   `CONFIG_DEVEL=y` + `CONFIG_CCACHE=y`)
 - 1G 内存设备建议保持 `bake_daede=false` + 运行时安装;若 baking 后 daed
@@ -280,7 +343,7 @@ Run workflow 时填写:
 ## 目录结构
 
 ```
-.github/workflows/build-mt5000.yml   # CI 流程(含 25 个自定义输入)
+.github/workflows/build-mt5000.yml   # CI 流程(含 26 个自定义输入)
 patches/0001-*.patch                 # MT5000 设备支持(上游 PR #24237, master 基线)
 patches/0002-*.patch                 # PR #24237 审阅反馈修复(自 dmsza/openwrt 移植, master 基线)
 patches/0003-*.patch                 # VLAN 卸载/NAPI 清理修复(dmsza 8fbeeb6 的 6.18 原形态适配)
@@ -290,6 +353,7 @@ config/mt5000.seed                   # 固件配置种子(基础定制)
 config/luci-extra.seed               # LuCI 应用精选清单(luci_extra_apps 选项控制)
 files/etc/uci-defaults/99-clean-apk-feeds  # 首启清理 404 apk 源
 files/etc/uci-defaults/99-ipv6       # 仅 enable_ipv6=true 时由 CI 生成
+files/etc/uci-defaults/99-mwan3-ipv4 # 仅 enable_mwan3=true 时由 CI 生成(限定 mwan3 只管 IPv4)
 ```
 
 `config/luci-extra.seed` 的维护:这是本固件预置的 LuCI 应用精选清单,已剔除
