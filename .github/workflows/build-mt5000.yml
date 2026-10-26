@@ -934,7 +934,6 @@ jobs:
           path: |
             immortalwrt/bin/targets/mediatek/filogic/*glinet_gl-mt5000*
             immortalwrt/bin/targets/mediatek/filogic/sha256sums
-            immortalwrt/bin/targets/mediatek/filogic/*.manifest
             immortalwrt/bin/targets/mediatek/filogic/config.buildinfo
           if-no-files-found: error
           retention-days: 30
@@ -947,8 +946,9 @@ jobs:
           tag_name: mt5000-r${{ github.run_number }}
           name: MT5000 固件 (${{ env.IWRT_PROFILE }}) r${{ github.run_number }} (base ${{ env.IWRT_REF }})
           body_path: release_notes.md
+          # 不加 *.manifest: 会被 *glinet_gl-mt5000* 重复匹配, 同一文件并发上传
+          # 两次会撞 action-gh-release 同名资产竞态 (r25 的 release 因此卡死在 draft)
           files: |
             immortalwrt/bin/targets/mediatek/filogic/*glinet_gl-mt5000*
             immortalwrt/bin/targets/mediatek/filogic/sha256sums
-            immortalwrt/bin/targets/mediatek/filogic/*.manifest
             immortalwrt/bin/targets/mediatek/filogic/config.buildinfo
