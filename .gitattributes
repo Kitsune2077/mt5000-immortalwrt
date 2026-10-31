@@ -1,2 +1,4 @@
 # keep patch files byte-exact: no CRLF conversion on any platform
 *.patch -text
+'
+#
