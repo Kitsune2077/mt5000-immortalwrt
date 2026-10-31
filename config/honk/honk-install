@@ -1,0 +1,44 @@
+#!/bin/sh
+# 从 daeuniverse 官方 apk 源安装 honk (含 doona 内置面板)
+# https://openwrt.daeuniverse.org
+# 可重复执行: 已安装则确保服务在跑后退出; 首启未联网时联网后手动跑一次即可
+# 注意: honk 与 dae/daed 不能共存 (eBPF TC 挂钩冲突, 官方源包亦互斥)
+
+if [ -e /etc/init.d/honk ]; then
+	echo "honk 已安装, 确保服务运行"
+	/etc/init.d/honk restart
+	exit 0
+fi
+
+. /etc/openwrt_release
+# SNAPSHOT 版本号形如 25.12-SNAPSHOT, 源路径按 major.minor 截断
+REL="$(echo "$DISTRIB_RELEASE" | cut -d. -f1-2 | sed 's/-SNAPSHOT$//')"
+[ -n "$REL" ] || REL="25.12"
+BASE="https://openwrt.daeuniverse.org/$REL"
+
+mkdir -p /etc/apk/keys /etc/apk/repositories.d
+if [ ! -f /etc/apk/keys/daeuniverse.pem ]; then
+	wget -qO /etc/apk/keys/daeuniverse.pem "$BASE/public-key.pem" || {
+		echo "下载官方源公钥失败 (网络未就绪?)" >&2
+		exit 1
+	}
+fi
+printf '@daeuniverse %s/packages/%s/packages.adb\n' "$BASE" "$DISTRIB_ARCH" \
+	> /etc/apk/repositories.d/daeuniverse.list
+
+apk update || { echo "apk update 失败" >&2; exit 1; }
+# vmlinux-btf-builtin: 本固件内核自带 BTF (ImmortalWrt), 用官方空包满足依赖;
+# 其余依赖 (libstdcpp/kmod-*/v2ray-geo*) 已在编译期编入固件, 不依赖会被
+# 首启清理掉的 snapshot apk 源
+apk add honk@daeuniverse luci-app-honk@daeuniverse \
+	luci-i18n-daeuniverse-zh-cn@daeuniverse vmlinux-btf-builtin || {
+	echo "apk add honk 失败 (与 dae/daed 冲突?)" >&2
+	exit 1
+}
+
+uci -q set honk.config.enabled=1
+uci -q commit honk
+/etc/init.d/honk enable
+/etc/init.d/honk start
+echo "honk 安装完成, doona 面板: http://$(uci -q get network.lan.ipaddr || echo '<LAN_IP>'):9090/ui/"
+exit 0

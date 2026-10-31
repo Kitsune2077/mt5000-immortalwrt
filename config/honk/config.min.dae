@@ -1,0 +1,92 @@
+# honk 默认配置模板
+# 来源: https://github.com/qichiyuhub/rule/blob/main/config/honk/config.min.dae
+# 适配: lan_interface 按其文件内说明由 ens18 改为本机 LAN 桥 br-lan;
+#       订阅占位(subscription)与节点选择在 doona 面板里改 (config_write: true)。
+# 包管理: 此文件随固件以 overlay 预置, 属 honk 包 conffile, 升级不会被覆盖。
+# 订阅支持V2ray/URL、mihomo等格式。
+subscription {
+    sub: 'https://example.com/sub' {
+        route: direct
+    }
+}
+
+# node {
+#     my_vps: 'hysteria2://密码@vps.example.com:443/?sni=vps.example.com'
+# }
+
+# policy 可选 select（面板手动选，默认）/ min_moving_avg（延迟最低）/ fallback（按顺序取第一个存活）/ loadbalance（轮询）/ score（按实际连接质量评分）
+group {
+    Proxy {
+        filter: !name(regex: '官网|剩余|流量|套餐|免费|订阅|到期时间|直连|Expire Date|Traffic|ExpireDate')
+        final: Final
+        interrupt_connections: true
+    }
+    Final {
+        filter: !name(regex: '官网|剩余|流量|套餐|免费|订阅|到期时间|直连|Expire Date|Traffic|ExpireDate')
+        policy: score
+    }
+}
+
+dns {
+    upstream {
+        remote: 'https://8.8.8.8/dns-query'
+        local: 'https://223.5.5.5/dns-query'
+    }
+    routing {
+        request {
+            qtype(https, svcb) -> reject
+            qname(geosite: cn) -> local
+            qname(geosite: geolocation-!cn) -> remote
+            fallback: remote
+        }
+        response {
+            # remote 解析出国内 IP 时改用 local 重查，拿到就近 CDN
+            upstream(remote) && ip(geoip: cn) -> local
+            fallback: accept
+        }
+    }
+}
+
+routing {
+    dip(geoip: private, geoip: cn) && !dport(53) -> direct(must)
+    l4proto(udp) && dport(443) -> block
+    domain(geosite: cn) -> direct
+    fallback: Proxy
+}
+
+global {
+    lan_interface: br-lan # 本机 LAN 桥 (官方模板要求按实际网卡修改, 本仓库固定 br-lan)
+    wan_interface: auto
+    # 面板账号、节点选择存这里；OpenWrt 的 /var 在内存里，重启会丢
+    data_dir: '/etc/honk'
+    tls_implementation: utls
+    bootstrap_resolver: '119.29.29.29:53'
+}
+
+assets {
+    subscription {
+        ua: 'clash.meta/1.19.30'
+        interval: 86400s
+        cache: true
+    }
+    geodata {
+        geosite: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/release/geosite.dat'
+        geoip: 'https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/release/geoip.dat'
+        route: direct
+    }
+}
+
+# doona 面板：http://路由器IP:9090/ui/，首次打开创建管理员
+experimental {
+    native_api {
+        enabled: true
+        listen: '0.0.0.0:9090'
+        password_auth: true
+        config_write: true
+        ui: embedded
+    }
+    cache_file {
+        enabled: true
+        store_dns: true
+    }
+}

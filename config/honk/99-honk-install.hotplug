@@ -1,0 +1,21 @@
+#!/bin/sh
+# WAN 联网后自动安装 honk (enable_honk=true 时随固件发布; 最多重试 3 轮,
+# 之后每个接口 ifup 事件会重新武装; 已安装则直接跳过)
+[ "$ACTION" = "ifup" ] || exit 0
+[ -e /etc/init.d/honk ] && exit 0
+[ -x /usr/bin/honk-install ] || exit 0
+mkdir /tmp/honk-install.lock 2>/dev/null || exit 0
+(
+	sleep 30 # 等 DNS/默认路由就绪
+	n=0
+	while [ "$n" -lt 3 ]; do
+		if /usr/bin/honk-install >/tmp/honk-install.log 2>&1; then
+			rm -rf /tmp/honk-install.lock
+			exit 0
+		fi
+		n=$((n + 1))
+		sleep 90
+	done
+	rm -rf /tmp/honk-install.lock
+) &
+exit 0
