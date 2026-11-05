@@ -1,0 +1,454 @@
+From: Hongjian Zhang <hongjian.zhang@gl-inet.com>
+Date: Wed, 5 Nov 2026 15:34:44 +0800
+Subject: [PATCH] net: dsa: rtl8366ub: sync tagger with PR #24237 head 1713e8be63
+
+Replace the stale 95-line tagger with the current 268-line upstream
+tagger. The old tagger cannot decode trapped control frames at all, so
+0004's BPDU/IGMP/MLD traps (driver side) delivered frames that the
+tagger dropped as "received untagged frame" - breaking STP and bridge
+multicast snooping. The upstream tagger adds:
+
+- native Realtek control-tag TX/RX (ETH_P_REALTEK 8-byte tag), pairing
+  with 0004's INSERT_TRAPPED cpu-tag mode; ordinary data frames keep
+  the plain 802.1Q business VLAN so PPE offload still parses them
+- skb_set_mac_header() fix for trapped frames
+- per-port control-frame egress (KEEP + LEARN_DIS, respects STP states)
+- VLAN-aware bridge egress classification (business VID, PVID fallback)
+
+Also add the factory-data nvmem cells (ddns/sn-bak/sn/country-code,
+offsets verified against GL stock firmware by dmtpascoal, matching the
+MT2500 layout in main) and align the chosen-node property order, making
+the board DTS byte-identical with PR #24237 head 1713e8be63 (2026-11-05,
+restructured into four commits).
+
+Not ported from that revision: the 795-11 special-tag gating split (0001
+already carries the same semantics inline; this baseline lacks the
+mtk_uses_dsa() helper), the 999-90 PPE-offload redesign (0003 covers the
+same RTL8366UB policy; replace 0003 with the upstream form at the next
+baseline bump) and the 6.18.56+ dummy-dev removal (needed on 6.18.52).
+
+Adapted-by: Kitsune <km2077@foxmail.com>
+Signed-off-by: Hongjian Zhang <hongjian.zhang@gl-inet.com>
+---
+diff --git a/target/linux/generic/pending-6.18/795-11-net-dsa-rtl8366ub-8021q-ppe-offload.patch b/target/linux/generic/pending-6.18/795-11-net-dsa-rtl8366ub-8021q-ppe-offload.patch
+index 85aa378..9af498f 100644
+--- a/target/linux/generic/pending-6.18/795-11-net-dsa-rtl8366ub-8021q-ppe-offload.patch
++++ b/target/linux/generic/pending-6.18/795-11-net-dsa-rtl8366ub-8021q-ppe-offload.patch
+@@ -234,105 +234,275 @@ diff --git a/net/dsa/tag_8021q.c b/net/dsa/tag_8021q.c
+  	return err;
+  }
+ diff --git a/net/dsa/tag_rtl8366ub_8021q.c b/net/dsa/tag_rtl8366ub_8021q.c
+-new file mode 100644
+-index 0000000..ae1d43a
+---- /dev/null
+-+++ b/net/dsa/tag_rtl8366ub_8021q.c
+-@@ -0,0 +1,95 @@
+-+// SPDX-License-Identifier: GPL-2.0-or-later
+-+/*
+-+ * 802.1Q-based DSA tagger for the GL.iNet RTL8366UB switch driver
+-+ *
+-+ * The native RTL8_4 tag hides the network-layer EtherType from Ethernet
+-+ * controllers which do not understand it. Use the DSA tag_8021q framework
+-+ * so both the software path and hardware flow offload see standard frames.
+-+ */
+-+
+-+#include <linux/dsa/8021q.h>
+-+
+-+#include "tag.h"
+-+#include "tag_8021q.h"
+-+
+-+#define RTL8366UB_8021Q_NAME "rtl8366ub-8021q"
+-+
+-+static struct sk_buff *
+-+rtl8366ub_8021q_xmit(struct sk_buff *skb, struct net_device *netdev)
+-+{
+-+	struct dsa_port *dp = dsa_user_to_port(netdev);
+-+	struct net_device *br = dsa_port_bridge_dev_get(dp);
+-+	u16 queue_mapping = skb_get_queue_mapping(skb);
+-+	u16 tx_vid = dsa_tag_8021q_standalone_vid(dp);
+-+	u8 pcp;
+-+
+-+	pcp = netdev_txq_to_tc(netdev, queue_mapping);
+-+	skb_set_queue_mapping(skb, dp->index);
+-+
+-+	/* Hardware flowtable fallback transmits directly to the DSA user
+-+	 * netdev and bypasses the bridge TX path, so offload_fwd_mark is not
+-+	 * a reliable indication that the bridge management VID is required.
+-+	 */
+-+	if (br) {
+-+		if (br_vlan_enabled(br))
+-+			return skb;
+-+
+-+		tx_vid = dsa_tag_8021q_bridge_vid(
+-+			dsa_port_bridge_num_get(dp));
+-+	}
+-+
+-+	return dsa_8021q_xmit(skb, netdev, ETH_P_8021Q,
+-+			      (pcp << VLAN_PRIO_SHIFT) | tx_vid);
+-+}
+-+
+-+static struct sk_buff *
+-+rtl8366ub_8021q_rcv(struct sk_buff *skb, struct net_device *netdev)
+-+{
+-+	int src_port = -1, switch_id = -1, vbid = -1, vid = -1;
+-+	__be16 proto;
+-+
+-+	if (skb_vlan_tag_present(skb))
+-+		proto = skb->vlan_proto;
+-+	else
+-+		proto = vlan_eth_hdr(skb)->h_vlan_proto;
+-+
+-+	if (proto != htons(ETH_P_8021Q)) {
+-+		const struct ethhdr *hdr = eth_hdr(skb);
+-+
+-+		dev_warn_ratelimited(&netdev->dev,
+-+			"received untagged frame: protocol=%04x src=%pM dst=%pM\n",
+-+			ntohs(proto), hdr->h_source, hdr->h_dest);
+-+		return NULL;
+-+	}
+-+
+-+	dsa_8021q_rcv(skb, &src_port, &switch_id, &vbid, &vid);
+-+
+-+	skb->dev = dsa_tag_8021q_find_user(netdev, src_port, switch_id,
+-+					   vid, vbid);
+-+	if (!skb->dev) {
+-+		dev_warn_ratelimited(&netdev->dev,
+-+			"could not decode source port: src=%d switch=%d vbid=%d vid=%d\n",
+-+			src_port, switch_id, vbid, vid);
+-+		return NULL;
+-+	}
+-+
+-+	dsa_default_offload_fwd_mark(skb);
+-+
+-+	return skb;
+-+}
+-+
+-+static const struct dsa_device_ops rtl8366ub_8021q_netdev_ops = {
+-+	.name			= RTL8366UB_8021Q_NAME,
+-+	.proto			= DSA_TAG_PROTO_RTL8366UB_8021Q,
+-+	.xmit			= rtl8366ub_8021q_xmit,
+-+	.rcv			= rtl8366ub_8021q_rcv,
+-+	.needed_headroom	= VLAN_HLEN,
+-+	.promisc_on_conduit	= true,
+-+};
+-+
+-+MODULE_DESCRIPTION("802.1Q DSA tagger for GL.iNet RTL8366UB switches");
+-+MODULE_LICENSE("GPL");
+-+MODULE_ALIAS_DSA_TAG_DRIVER(DSA_TAG_PROTO_RTL8366UB_8021Q,
+-+			    RTL8366UB_8021Q_NAME);
+-+
+-+module_dsa_tag_driver(rtl8366ub_8021q_netdev_ops);
+--- 
+-2.51.0
+++ }
+++--- /dev/null
++++++ b/net/dsa/tag_rtl8366ub_8021q.c
+++@@ -0,0 +1,268 @@
++++// SPDX-License-Identifier: GPL-2.0-or-later
++++/*
++++ * 802.1Q-based DSA tagger for the GL.iNet RTL8366UB switch driver
++++ *
++++ * The native RTL8_4 tag hides the network-layer EtherType from Ethernet
++++ * controllers which do not understand it. Use the DSA tag_8021q framework
++++ * so normal data frames remain parseable by hardware flow offload. Trapped
++++ * control frames retain the native tag to identify their exact ingress port.
++++ */
++++
++++#include <linux/bitfield.h>
++++#include <linux/dsa/8021q.h>
++++#include <linux/icmpv6.h>
++++#include <linux/if_bridge.h>
++++#include <linux/ip.h>
++++#include <net/ipv6.h>
++++
++++#include "tag.h"
++++#include "tag_8021q.h"
++++
++++#define RTL8366UB_8021Q_NAME "rtl8366ub-8021q"
++++
++++#define RTL8366UB_CTRL_TAG_LEN 8
++++#define RTL8366UB_CTRL_PROTOCOL GENMASK(15, 8)
++++#define RTL8366UB_CTRL_PROTOCOL_VALUE 4
++++#define RTL8366UB_CTRL_PORT GENMASK(3, 0)
++++#define RTL8366UB_CTRL_KEEP BIT(7)
++++#define RTL8366UB_CTRL_LEARN_DIS BIT(5)
++++
++++static bool rtl8366ub_8021q_is_control(struct sk_buff *skb)
++++{
++++	struct icmp6hdr _icmp6, *icmp6;
++++	struct iphdr _iph, *iph;
++++	unsigned int offset = 0;
++++	__be16 proto;
++++
++++	if (is_link_local_ether_addr(eth_hdr(skb)->h_dest))
++++		return true;
++++
++++	proto = vlan_get_protocol(skb);
++++	if (proto == htons(ETH_P_IP)) {
++++		iph = skb_header_pointer(skb, skb_network_offset(skb), sizeof(_iph), &_iph);
++++		return iph && iph->protocol == IPPROTO_IGMP;
++++	}
++++	if (proto != htons(ETH_P_IPV6) ||
++++	    ipv6_find_hdr(skb, &offset, IPPROTO_ICMPV6, NULL, NULL) < 0)
++++		return false;
++++
++++	icmp6 = skb_header_pointer(skb, offset, sizeof(_icmp6), &_icmp6);
++++	if (!icmp6)
++++		return false;
++++
++++	switch (icmp6->icmp6_type) {
++++	case ICMPV6_MGM_QUERY:
++++	case ICMPV6_MGM_REPORT:
++++	case ICMPV6_MGM_REDUCTION:
++++	case ICMPV6_MLD2_REPORT:
++++		return true;
++++	default:
++++		return false;
++++	}
++++}
++++
++++static struct sk_buff *rtl8366ub_8021q_control_xmit(struct sk_buff *skb, struct net_device *netdev)
++++{
++++	struct dsa_port *dp = dsa_user_to_port(netdev);
++++	__be16 tag[RTL8366UB_CTRL_TAG_LEN / 2];
++++
++++	/* Put the business VLAN inside the native header. A hardware-inserted
++++	 * outer VLAN would hide the CPU tag from the switch's CPU-tag parser.
++++	 */
++++	if (skb_vlan_tag_present(skb)) {
++++		if (__vlan_insert_tag(skb, skb->vlan_proto, skb_vlan_tag_get(skb)))
++++			return NULL;
++++		skb->protocol = skb->vlan_proto;
++++		__vlan_hwaccel_clear_tag(skb);
++++	}
++++	if (skb->ip_summed == CHECKSUM_PARTIAL && skb_checksum_help(skb))
++++		return NULL;
++++
++++	tag[0] = htons(ETH_P_REALTEK);
++++	tag[1] = htons(FIELD_PREP(RTL8366UB_CTRL_PROTOCOL, RTL8366UB_CTRL_PROTOCOL_VALUE));
++++	tag[2] = htons(RTL8366UB_CTRL_KEEP | RTL8366UB_CTRL_LEARN_DIS);
++++	tag[3] = htons(BIT(dp->index));
++++
++++	/* Control frames must leave only the requested user port, including
++++	 * BPDUs sent while that port is in the blocking or listening state.
++++	 */
++++	skb_push(skb, RTL8366UB_CTRL_TAG_LEN);
++++	dsa_alloc_etype_header(skb, RTL8366UB_CTRL_TAG_LEN);
++++	memcpy(dsa_etype_header_pos_tx(skb), tag, sizeof(tag));
++++
++++	return skb;
++++}
++++
++++static int rtl8366ub_8021q_control_rcv(struct sk_buff *skb)
++++{
++++	__be16 tag[RTL8366UB_CTRL_TAG_LEN / 2];
++++	int port;
++++
++++	if (!pskb_may_pull(skb, RTL8366UB_CTRL_TAG_LEN))
++++		return -EINVAL;
++++
++++	memcpy(tag, dsa_etype_header_pos_rx(skb), sizeof(tag));
++++	if (FIELD_GET(RTL8366UB_CTRL_PROTOCOL, ntohs(tag[1])) != RTL8366UB_CTRL_PROTOCOL_VALUE)
++++		return -EPROTO;
++++
++++	/* The supported UTP user ports have identical logical and physical
++++	 * indices. Other physical ports have no DSA user netdev and are dropped.
++++	 */
++++	port = FIELD_GET(RTL8366UB_CTRL_PORT, ntohs(tag[3]));
++++	skb_pull_rcsum(skb, RTL8366UB_CTRL_TAG_LEN);
++++	dsa_strip_etype_header(skb, RTL8366UB_CTRL_TAG_LEN);
++++
++++	return port;
++++}
++++
++++static struct sk_buff *rtl8366ub_8021q_vlan_xmit(struct sk_buff *skb, struct net_device *netdev,
++++						 u8 pcp)
++++{
++++	bool hw_tag = skb_vlan_tag_present(skb);
++++	bool vlan_header = false;
++++	struct bridge_vlan_info vinfo;
++++	u16 tci = pcp << VLAN_PRIO_SHIFT;
++++	u16 vid;
++++	int err = 0;
++++
++++	if (hw_tag) {
++++		if (skb->vlan_proto != htons(ETH_P_8021Q))
++++			return NULL;
++++		tci = skb_vlan_tag_get(skb);
++++	} else if (eth_hdr(skb)->h_proto == htons(ETH_P_8021Q)) {
++++		if (!pskb_may_pull(skb, VLAN_ETH_HLEN))
++++			return NULL;
++++		tci = ntohs(vlan_eth_hdr(skb)->h_vlan_TCI);
++++		vlan_header = true;
++++	} else if (eth_hdr(skb)->h_proto == htons(ETH_P_8021AD)) {
++++		return NULL;
++++	}
++++
++++	vid = tci & VLAN_VID_MASK;
++++	rcu_read_lock();
++++	/* Direct user-port TX has no bridge VLAN. Classify untagged and
++++	 * priority-tagged frames using that port's PVID, never the CPU PVID.
++++	 */
++++	if (!vid)
++++		err = br_vlan_get_pvid_rcu(netdev, &vid);
++++	if (!err && (!vid || vid_is_dsa_8021q(vid)))
++++		err = -EINVAL;
++++	if (!err)
++++		err = br_vlan_get_info_rcu(netdev, vid, &vinfo);
++++	rcu_read_unlock();
++++	if (err)
++++		return NULL;
++++
++++	/* Keep an explicit business VID, including the bridge-resolved VID
++++	 * used by flowtable fallback. Only fill in a missing VID.
++++	 */
++++	if (tci & VLAN_VID_MASK)
++++		return skb;
++++
++++	tci |= vid;
++++	if (hw_tag) {
++++		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), tci);
++++		return skb;
++++	}
++++	if (vlan_header) {
++++		if (skb_ensure_writable(skb, VLAN_ETH_HLEN))
++++			return NULL;
++++		vlan_eth_hdr(skb)->h_vlan_TCI = htons(tci);
++++		return skb;
++++	}
++++
++++	return dsa_8021q_xmit(skb, netdev, ETH_P_8021Q, tci);
++++}
++++
++++static struct sk_buff *rtl8366ub_8021q_xmit(struct sk_buff *skb, struct net_device *netdev)
++++{
++++	struct dsa_port *dp = dsa_user_to_port(netdev);
++++	struct net_device *br = dsa_port_bridge_dev_get(dp);
++++	u16 queue_mapping = skb_get_queue_mapping(skb);
++++	u16 tx_vid = dsa_tag_8021q_standalone_vid(dp);
++++	u8 pcp;
++++
++++	pcp = netdev_txq_to_tc(netdev, queue_mapping);
++++	skb_set_queue_mapping(skb, dp->index);
++++
++++	/* The bridge sends snooped IGMP/MLD per port without TX forwarding
++++	 * offload. Keep hardware-replicated traffic on the VLAN data path.
++++	 */
++++	if (!skb->offload_fwd_mark && rtl8366ub_8021q_is_control(skb))
++++		return rtl8366ub_8021q_control_xmit(skb, netdev);
++++
++++	/* Hardware flowtable fallback transmits directly to the DSA user
++++	 * netdev and bypasses the bridge TX path, so offload_fwd_mark is not
++++	 * a reliable indication that the bridge management VID is required.
++++	 */
++++	if (br) {
++++		if (br_vlan_enabled(br))
++++			return rtl8366ub_8021q_vlan_xmit(skb, netdev, pcp);
++++
++++		tx_vid = dsa_tag_8021q_bridge_vid(dsa_port_bridge_num_get(dp));
++++	}
++++
++++	return dsa_8021q_xmit(skb, netdev, ETH_P_8021Q, (pcp << VLAN_PRIO_SHIFT) | tx_vid);
++++}
++++
++++static struct sk_buff *rtl8366ub_8021q_rcv(struct sk_buff *skb, struct net_device *netdev)
++++{
++++	int src_port = -1, switch_id = -1, vbid = -1, vid = -1;
++++	bool trapped = false;
++++	__be16 proto;
++++
++++	if (eth_hdr(skb)->h_proto == htons(ETH_P_REALTEK)) {
++++		src_port = rtl8366ub_8021q_control_rcv(skb);
++++		if (src_port < 0)
++++			return NULL;
++++		skb_set_mac_header(skb, -ETH_HLEN);
++++		switch_id = netdev->dsa_ptr->ds->index;
++++		trapped = true;
++++	}
++++
++++	if (skb_vlan_tag_present(skb)) {
++++		proto = skb->vlan_proto;
++++	} else {
++++		proto = eth_hdr(skb)->h_proto;
++++		if (proto == htons(ETH_P_8021Q) && !pskb_may_pull(skb, VLAN_HLEN))
++++			return NULL;
++++	}
++++
++++	/* A trapped BPDU may be untagged even on a VLAN-filtering bridge.
++++	 * For tagged control frames, strip only a DSA management VLAN and
++++	 * preserve a business VLAN for the bridge's ingress checks.
++++	 */
++++	if (proto == htons(ETH_P_8021Q))
++++		dsa_8021q_rcv(skb, &src_port, &switch_id, &vbid, &vid);
++++	else if (!trapped)
++++		return NULL;
++++
++++	skb->dev = dsa_tag_8021q_find_user(netdev, src_port, switch_id, vid, vbid);
++++	if (!skb->dev) {
++++		dev_warn_ratelimited(&netdev->dev,
++++				     "could not decode source port: src=%d switch=%d vbid=%d vid=%d\n",
++++				     src_port, switch_id, vbid, vid);
++++		return NULL;
++++	}
++++
++++	/* Trapped frames have not been forwarded by the switch. */
++++	if (!trapped)
++++		dsa_default_offload_fwd_mark(skb);
++++
++++	return skb;
++++}
++++
++++static const struct dsa_device_ops rtl8366ub_8021q_netdev_ops = {
++++	.name = RTL8366UB_8021Q_NAME,
++++	.proto = DSA_TAG_PROTO_RTL8366UB_8021Q,
++++	.xmit = rtl8366ub_8021q_xmit,
++++	.rcv = rtl8366ub_8021q_rcv,
++++	.needed_headroom = RTL8366UB_CTRL_TAG_LEN + VLAN_HLEN,
++++	.promisc_on_conduit = true,
++++};
++++
++++MODULE_DESCRIPTION("802.1Q DSA tagger for GL.iNet RTL8366UB switches");
++++MODULE_LICENSE("GPL");
++++MODULE_ALIAS_DSA_TAG_DRIVER(DSA_TAG_PROTO_RTL8366UB_8021Q, RTL8366UB_8021Q_NAME);
++++
++++module_dsa_tag_driver(rtl8366ub_8021q_netdev_ops);
+diff --git a/target/linux/mediatek/dts/mt7987a-glinet-gl-mt5000.dts b/target/linux/mediatek/dts/mt7987a-glinet-gl-mt5000.dts
+index fc1df4b..7d0efc5 100644
+--- a/target/linux/mediatek/dts/mt7987a-glinet-gl-mt5000.dts
++++ b/target/linux/mediatek/dts/mt7987a-glinet-gl-mt5000.dts
+@@ -22,11 +22,11 @@
+ 	};
+ 
+ 	chosen {
++		stdout-path = "serial0:115200n8";
+ 		bootargs = "console=ttyS0,115200n1 loglevel=8  \
+ 				earlycon=uart8250,mmio32,0x11000000 \
+ 				root=PARTLABEL=rootfs rootwait \
+ 			    rootfstype=squashfs,f2fs pci=pcie_bus_perf";
+-		stdout-path = "serial0:115200n8";
+ 	};
+ 
+ 	gpio-keys {
+@@ -136,6 +136,22 @@
+ 							reg = <0x4000 0x6>;
+ 							#nvmem-cell-cells = <1>;
+ 						};
++
++						ddns@4010 {
++							reg = <0x4010 0x10>;
++						};
++
++						sn-bak@4020 {
++							reg = <0x4020 0x10>;
++						};
++
++						sn@4030 {
++							reg = <0x4030 0x10>;
++						};
++
++						country-code@4088 {
++							reg = <0x4088 0x10>;
++						};
+ 					};
+ 
+ 				};

@@ -303,6 +303,9 @@ jobs:
           #         + 交换机初始化强化 + BPDU/IGMP/MLD 陷阱到 CPU (0004,
           #           PR head 89a10ec, 2026-10-26 真机复测通过; 795-11 PPE
           #           卸载重构暂缓, 等 PEPITO82 复位 bug 复测有结论)
+          #         + tagger 同步(控制帧解码 + mac_header 修复, 旧 tagger
+          #           解不了 0004 的陷阱帧) + factory nvmem 单元 (0005,
+          #           PR head 1713e8be63, 2026-11-05 四提交重构)
           # 25.12 : patches-25.12/ = dmsza/openwrt "[25.12] add support for
           #         GL.iNet GL-MT5000" (现为 af67b61, 审阅修复已并入; 为适配
           #         ImmortalWrt 树已剔除仅涉及 jiorouter 设备的 hunk,

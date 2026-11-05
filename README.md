@@ -283,7 +283,7 @@ Run workflow 时填写:
   (ImmortalWrt `openwrt-25.12` 分支 HEAD @2026-10-24,内核 6.12,已并入上游
   25.12.x(.6 世代)修复——ImmortalWrt 尚无 v25.12.3+ tag,故 pin 分支提交;
   补丁在 `patches-25.12/`)。`iwrt_ref` 显式填写时优先,但需自行确保对应补丁能套用。
-  跟进上游时:master 改基线需重验 `patches/0001~0004`;25.12 可跟进新 tag(如
+  跟进上游时:master 改基线需重验 `patches/0001~0005`;25.12 可跟进新 tag(如
   `v25.12.3`)或 dmsza 上游分支更新,补丁套用失败时 Action 会明确报错,基于新基线
   重新生成 `patches-25.12/0001-*.patch` 即可(源自
   [dmsza/openwrt](https://github.com/dmsza/openwrt) 的 `[25.12]` 回移 commit
@@ -297,7 +297,7 @@ Run workflow 时填写:
   本树无对应字段、无法编译)
 - 想跟进 ImmortalWrt master:`iwrt_ref` 填 `master`;设备补丁应用失败时
   Action 会明确报错,需基于 PR #24237 最新 head 重新生成 `patches/0001-*.patch`
-- 设备补丁分三层:`0001` 是 PR #24237 的原始提交(设备支持本体),
+- 设备补丁分层(0001~0005):`0001` 是 PR #24237 的原始提交(设备支持本体),
   `0002` 是该 PR 的**审阅反馈修复**,`0003` 是上游 `8fbeeb6` 的**6.18 适配版**
   (拒绝 VLAN-aware 桥的 PPE 卸载 + dummy NAPI 分配失败时清理 QDMA notifier),
   均移植自 [dmsza/openwrt](https://github.com/dmsza/openwrt)(0002 对齐 `102a02f`)。
@@ -320,6 +320,21 @@ Run workflow 时填写:
   桥的硬件卸载(tagger 对 VLAN-aware 出口不打标签,PPE 无法用管理 VID 替代);
   (795-12 段):dummy NAPI 分配失败改跳 `err_unreg_netdev` 以清理已注册的
   QDMA notifier,清理路径加 `if (eth->dummy_dev)` 防护
+- `patches/0004-*.patch`(对齐 PR head `89a10ec`,2026-10-26 真机复测通过):
+  交换机初始化强化(VLAN 1 IVL + 全端口 tagged-only + PVID 0,取代 0002 的
+  仅 CPU 口 tagged-only 块)、BPDU/IGMP/MLD 陷阱到 CPU(`control_traps_setup`)、
+  CPU 标签改 INSERT_TRAPPED(数据帧保留标准 EtherType 供 PPE 解析)
+- `patches/0005-*.patch`(对齐 PR head `1713e8be63`,2026-11-05 四提交重构):
+  tagger 整体同步到上游 268 行版——**旧 tagger 解不了 0004 陷阱进 CPU 的
+  控制帧**(按 "received untagged frame" 丢弃,STP/组播侦听会坏),新版含
+  原生 Realtek 控制标签收发、`skb_set_mac_header` 修复、VLAN-aware 桥出口
+  分类;DTS 加 factory 分区 nvmem 单元(ddns/sn/sn-bak/country-code,
+  对齐 MT2500 布局)。tagger 改动较大,重新生成 0001 后需整体重新同步
+- **升基线触发条件**(PR 已改、当前基线还不需要):内核 ≥6.18.56(master)/
+  ≥6.12.113(25.12)后上游已原生含 "allocate dummy netdev sooner",须删掉
+  本地 795-12(master 在 0001/0002/0003,25.12 在 0002);基线含 797 无线
+  卸载系列(openwrt main 2026-10-28 起)后,用 PR 的 `999-90` 形态替换
+  `0003`(其签名已适配 `wcid`/`num_tags` 参数)
 - 改编译配置:编辑 `config/mt5000.seed`(menuconfig 风格种子,defconfig 展开;
   workflow 的输入项会动态覆盖其中的 IP/分区大小/语言)
 - argon 主题版本:master 配置档直接用 luci feed master 的 3.x;25.12 配置档
