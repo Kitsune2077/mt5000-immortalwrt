@@ -298,8 +298,8 @@ Run workflow 时填写:
 
 ## 维护说明
 
-- **配置档与基线**:`iwrt_profile=master`(默认)使用快照基线 `f44d1535b4`(内核
-  6.18.52,2026-09-18,补丁在 `patches/`);`iwrt_profile=25.12` 使用稳定线基线
+- **配置档与基线**:`iwrt_profile=master`(默认)使用快照基线 `a4ba8240d8`(内核
+  6.18.60,2026-11-14,补丁在 `patches/`);`iwrt_profile=25.12` 使用稳定线基线
   `761b7ff22c`(ImmortalWrt `openwrt-25.12` 分支 HEAD @2026-11-11,内核 6.12.116,
   已并入上游 25.12.x 修复——ImmortalWrt 尚无 v25.12.3+ tag,故 pin 分支提交;
   补丁在 `patches-25.12/`)。`iwrt_ref` 显式填写时优先,但需自行确保对应补丁能套用。
@@ -318,30 +318,25 @@ Run workflow 时填写:
   也不再需要
 - 想跟进 ImmortalWrt master:`iwrt_ref` 填 `master`;设备补丁应用失败时
   Action 会明确报错,需基于 PR #24237 最新 head 重新生成 `patches/0001-*.patch`。
-  **注意 master 基线仍是 6.18.52**:上游 6.18.56+ 已原生含 dummy netdev 提前分配,
-  升到该内核前必须先删除 `patches/0001`、`0002`、`0003` 中的 795-12;同时上游新增
-  设备/配置会移动 `platform.sh` 与 `filogic/config-6.18` 的 hunk 上下文,0001
-  需要重新生成
+  master 已升到 6.18.60 并移除 795-12(6.18.56+ 上游原生包含 dummy netdev
+  提前分配),`0001~0005` 已在 `a4ba8240d8` 上实测干净套用;后续升基线仍需重验
+  `0001~0005`,上游新增设备/配置可能移动 `platform.sh` 与
+  `filogic/config-6.18` 的 hunk 上下文
 - 设备补丁分层(0001~0005):`0001` 是 PR #24237 的原始提交(设备支持本体),
   `0002` 是该 PR 的**审阅反馈修复**,`0003` 是上游 `8fbeeb6` 的**6.18 适配版**
-  (拒绝 VLAN-aware 桥的 PPE 卸载 + dummy NAPI 分配失败时清理 QDMA notifier),
-  均移植自 [dmsza/openwrt](https://github.com/dmsza/openwrt)(0002 对齐 `102a02f`)。
-  **注意**:`8fbeeb6` 的 6.18 伴随提交(`b669f86d`,795-12 上下文重写)针对
-  dmsza 自己的 openwrt main 树,在 master 固定基线上**内核打补丁阶段套不上**
-  (CI 实测失败),因此 0003 不采用其重写形态,而是把功能修复折叠进 0001 的
-  原始 hunk(r13 时代已验证可套)。上游分支再更新时优先增补后续层,
-  并确认全链能按顺序干净套用到 `iwrt_ref` 基线
+  (仅保留 795-11 段:拒绝 VLAN-aware 桥的 PPE 卸载),均移植自
+  [dmsza/openwrt](https://github.com/dmsza/openwrt)(0002 对齐 `102a02f`)。
+  `0003` 的 795-12 段(NAPI 清理)已删除:6.18.56+ 上游已原生包含 dummy netdev
+  提前分配与错误路径清理。上游分支再更新时优先增补后续层,并确认全链能按顺序
+  干净套用到 `iwrt_ref` 基线
 - `patches/0002-*.patch` 的内容:RTL8366UB 默认 VLAN 表清零(默认 PVID 不
   承载任何数据 VLAN)、CPU 口强制只收 tagged 帧、DSA tag 协议号 32→200(避开
-  上游已占用 id)、`795-12` 错误路径只回滚已成功注册的 netdev 并注销
-  device notifier、`platform.sh` 把 `glinet,gl-mt5000` 加入
+  上游已占用 id)、`platform.sh` 把 `glinet,gl-mt5000` 加入
   `platform_copy_config()`(eMMC 上 sysupgrade 才会保留配置)、DTS 改名
   `mt7987a-glinet-gl-mt5000` 并补 serial0/stdout-path 等。重新生成 0001 后
   需同步核对 0002(其 hunk 上下文依赖 0001 生成的文件内容)
 - `patches/0003-*.patch` 的内容(795-11 段):`mtk_ppe_offload` 拒绝 VLAN-aware
-  桥的硬件卸载(tagger 对 VLAN-aware 出口不打标签,PPE 无法用管理 VID 替代);
-  (795-12 段):dummy NAPI 分配失败改跳 `err_unreg_netdev` 以清理已注册的
-  QDMA notifier,清理路径加 `if (eth->dummy_dev)` 防护
+  桥的硬件卸载(tagger 对 VLAN-aware 出口不打标签,PPE 无法用管理 VID 替代)
 - `patches/0004-*.patch`(对齐 PR head `89a10ec`,2026-10-26 真机复测通过):
   交换机初始化强化(VLAN 1 IVL + 全端口 tagged-only + PVID 0,取代 0002 的
   仅 CPU 口 tagged-only 块)、BPDU/IGMP/MLD 陷阱到 CPU(`control_traps_setup`)、
@@ -352,11 +347,10 @@ Run workflow 时填写:
   原生 Realtek 控制标签收发、`skb_set_mac_header` 修复、VLAN-aware 桥出口
   分类;DTS 加 factory 分区 nvmem 单元(ddns/sn/sn-bak/country-code,
   对齐 MT2500 布局)。tagger 改动较大,重新生成 0001 后需整体重新同步
-- **升基线触发条件**:25.12 已升到 6.12.116 并删除 795-12(见上)。master 仍
-  pin 6.18.52;升到 6.18.56+ 前须先从 `patches/0001`、`0002`、`0003` 删除
-  795-12,否则内核打补丁阶段会失败。基线含 797 无线卸载系列(openwrt main
-  2026-10-28 起)后,用 PR 的 `999-90` 形态替换 `0003`(其签名已适配
-  `wcid`/`num_tags` 参数)
+- **升基线触发条件**:master 已升到 6.18.60、25.12 已升到 6.12.116,两边的
+  795-12 均已删除(上游 6.18.56+/6.12.113+ 原生包含 dummy netdev 提前分配)。
+  基线含 797 无线卸载系列(openwrt main 2026-10-28 起)后,用 PR 的 `999-90`
+  形态替换 `0003`(其签名已适配 `wcid`/`num_tags` 参数)
 - 改编译配置:编辑 `config/mt5000.seed`(menuconfig 风格种子,defconfig 展开;
   workflow 的输入项会动态覆盖其中的 IP/分区大小/语言)
 - argon 主题版本:master 配置档直接用 luci feed master 的 3.x;25.12 配置档
@@ -385,7 +379,7 @@ Run workflow 时填写:
 .github/workflows/build-mt5000.yml   # CI 流程(含 25 个自定义输入, GitHub 上限)
 patches/0001-*.patch                 # MT5000 设备支持(上游 PR #24237, master 基线)
 patches/0002-*.patch                 # PR #24237 审阅反馈修复(自 dmsza/openwrt 移植, master 基线)
-patches/0003-*.patch                 # VLAN 卸载/NAPI 清理修复(dmsza 8fbeeb6 的 6.18 原形态适配)
+patches/0003-*.patch                 # VLAN-aware 桥拒绝 PPE 卸载(dmsza 8fbeeb6 的 795-11 段)
 patches-25.12/0001-*.patch           # MT5000 设备支持 25.12 回移(dmsza 2eba538 = PR 1713e8be63 重构版)
 config/mt5000.seed                   # 固件配置种子(基础定制)
 config/luci-extra.seed               # LuCI 应用精选清单(luci_extra_apps 选项控制)
