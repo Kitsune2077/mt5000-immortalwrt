@@ -214,6 +214,26 @@ qichiyuhub/rule 的分流模板,`lan_interface` 已按其文件内说明改为 b
 sysupgrade 备份,后续升级走 apk / LuCI。若首启未联网,联网后 SSH 执行
 `honk-install` 即可。honk 仍较新,保守选择请继续用 daede。
 
+### Open-Box(第三方代理面板,运行时安装)
+
+[Open-Box](https://github.com/liandu2024/Open-Box) 是闭源的一体化 sing-box
+面板,本项目**不分发**其安装包(许可证禁止再分发)。固件已内置其运行依赖:
+`kmod-tun`、`kmod-nft-queue`、`kmod-nft-nat`、`kmod-veth`、`ip-full`、
+`ca-bundle`,以及 target 默认的 `dnsmasq-full` / `nftables`。刷机后按官方
+脚本安装(默认端口 3036,建议显式指定;国内网络可加 `--mirror`):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/install.sh | sh -s -- --port 3036
+```
+
+注意:
+
+- 不要和 OpenClash / daede / honk 同时运行(都抢 nftables/TUN/dnsmasq)
+- `/opt/open-box` 不在 sysupgrade 备份范围内,保留配置升级后需要重装;
+  先用面板导出配置,或只把 `/opt/open-box/data` 加入 `/etc/sysupgrade.conf`
+- 需要 /opt 所在分区至少 512MB 可用空间,默认 2048MB rootfs 足够;
+  小分区 + docker/daede/quickstart 全开时要先确认剩余空间
+
 ## 使用方法
 
 1. 在 GitHub 上新建一个仓库,把本目录全部内容推送上去
@@ -278,26 +298,30 @@ Run workflow 时填写:
 
 ## 维护说明
 
-- **配置档与基线**:`iwrt_profile=master`(默认)使用快照基线 `f44d1535b4`(内核 6.18,
-  补丁在 `patches/`);`iwrt_profile=25.12` 使用稳定线基线 `84b665b5de`
-  (ImmortalWrt `openwrt-25.12` 分支 HEAD @2026-10-24,内核 6.12,已并入上游
-  25.12.x(.6 世代)修复——ImmortalWrt 尚无 v25.12.3+ tag,故 pin 分支提交;
+- **配置档与基线**:`iwrt_profile=master`(默认)使用快照基线 `f44d1535b4`(内核
+  6.18.52,2026-09-18,补丁在 `patches/`);`iwrt_profile=25.12` 使用稳定线基线
+  `761b7ff22c`(ImmortalWrt `openwrt-25.12` 分支 HEAD @2026-11-11,内核 6.12.116,
+  已并入上游 25.12.x 修复——ImmortalWrt 尚无 v25.12.3+ tag,故 pin 分支提交;
   补丁在 `patches-25.12/`)。`iwrt_ref` 显式填写时优先,但需自行确保对应补丁能套用。
   跟进上游时:master 改基线需重验 `patches/0001~0005`;25.12 可跟进新 tag(如
   `v25.12.3`)或 dmsza 上游分支更新,补丁套用失败时 Action 会明确报错,基于新基线
   重新生成 `patches-25.12/0001-*.patch` 即可(源自
   [dmsza/openwrt](https://github.com/dmsza/openwrt) 的 `[25.12]` 回移 commit
-  `2eba538`(2026-11-06):即 PR #24237 重构终态(`1713e8be63`)的 6.12 完整
+  `2eba538`(2026-11-05):即 PR #24237 重构终态(`1713e8be63`)的 6.12 完整
   回移——新文件结构 `795-10`(驱动 + 268 行原生控制标签 tagger + BPDU/IGMP/MLD
   陷阱)+ `795-11`(`mtk_uses_dsa()` 特殊标签门控),DTS 含 factory nvmem;
   6.12 侧不含 PPE offload 段(797 系列不在 6.12)。已在 ImmortalWrt 基线
-  `84b665b5de` 上实测全部 hunk 带 offset 干净套用,无需剔除 jiorouter hunk)。
-  `patches-25.12/0002`:独立的 `795-12` dummy-NAPI 补丁(内容取自旧链
-  0001+0002 的验证终态)——本基线(内核 6.12.112)仍需要它;dmsza 新回移基于
-  openwrt-25.12 HEAD(dummy-dev 已上游化)故不含;ImmortalWrt 25.12 升到
-  6.12.113+ 后删除本层即可
+  `761b7ff22c`(内核 6.12.116)上实测 0001 全部 hunk 干净套用,795-11 内核补丁
+  可直接套到 6.12.116 的 `mtk_eth_soc.c`)。
+  `patches-25.12/0002` 已删除:6.12.113 起上游已把 dummy netdev 提前分配(并补上
+  错误路径的 `cancel_work_sync()`),原 795-12 补丁在 6.12.116 上已无法套用,
+  也不再需要
 - 想跟进 ImmortalWrt master:`iwrt_ref` 填 `master`;设备补丁应用失败时
-  Action 会明确报错,需基于 PR #24237 最新 head 重新生成 `patches/0001-*.patch`
+  Action 会明确报错,需基于 PR #24237 最新 head 重新生成 `patches/0001-*.patch`。
+  **注意 master 基线仍是 6.18.52**:上游 6.18.56+ 已原生含 dummy netdev 提前分配,
+  升到该内核前必须先删除 `patches/0001`、`0002`、`0003` 中的 795-12;同时上游新增
+  设备/配置会移动 `platform.sh` 与 `filogic/config-6.18` 的 hunk 上下文,0001
+  需要重新生成
 - 设备补丁分层(0001~0005):`0001` 是 PR #24237 的原始提交(设备支持本体),
   `0002` 是该 PR 的**审阅反馈修复**,`0003` 是上游 `8fbeeb6` 的**6.18 适配版**
   (拒绝 VLAN-aware 桥的 PPE 卸载 + dummy NAPI 分配失败时清理 QDMA notifier),
@@ -328,11 +352,11 @@ Run workflow 时填写:
   原生 Realtek 控制标签收发、`skb_set_mac_header` 修复、VLAN-aware 桥出口
   分类;DTS 加 factory 分区 nvmem 单元(ddns/sn/sn-bak/country-code,
   对齐 MT2500 布局)。tagger 改动较大,重新生成 0001 后需整体重新同步
-- **升基线触发条件**(PR 已改、当前基线还不需要):内核 ≥6.18.56(master)/
-  ≥6.12.113(25.12)后上游已原生含 "allocate dummy netdev sooner",须删掉
-  本地 795-12(master 在 0001/0002/0003,25.12 在 0002);基线含 797 无线
-  卸载系列(openwrt main 2026-10-28 起)后,用 PR 的 `999-90` 形态替换
-  `0003`(其签名已适配 `wcid`/`num_tags` 参数)
+- **升基线触发条件**:25.12 已升到 6.12.116 并删除 795-12(见上)。master 仍
+  pin 6.18.52;升到 6.18.56+ 前须先从 `patches/0001`、`0002`、`0003` 删除
+  795-12,否则内核打补丁阶段会失败。基线含 797 无线卸载系列(openwrt main
+  2026-10-28 起)后,用 PR 的 `999-90` 形态替换 `0003`(其签名已适配
+  `wcid`/`num_tags` 参数)
 - 改编译配置:编辑 `config/mt5000.seed`(menuconfig 风格种子,defconfig 展开;
   workflow 的输入项会动态覆盖其中的 IP/分区大小/语言)
 - argon 主题版本:master 配置档直接用 luci feed master 的 3.x;25.12 配置档
@@ -363,7 +387,6 @@ patches/0001-*.patch                 # MT5000 设备支持(上游 PR #24237, mas
 patches/0002-*.patch                 # PR #24237 审阅反馈修复(自 dmsza/openwrt 移植, master 基线)
 patches/0003-*.patch                 # VLAN 卸载/NAPI 清理修复(dmsza 8fbeeb6 的 6.18 原形态适配)
 patches-25.12/0001-*.patch           # MT5000 设备支持 25.12 回移(dmsza 2eba538 = PR 1713e8be63 重构版)
-patches-25.12/0002-*.patch           # 795-12 dummy-NAPI 独立补丁(6.12.112 基线仍需,6.12.113+ 可删)
 config/mt5000.seed                   # 固件配置种子(基础定制)
 config/luci-extra.seed               # LuCI 应用精选清单(luci_extra_apps 选项控制)
 files/etc/uci-defaults/99-clean-apk-feeds  # 首启清理 404 apk 源

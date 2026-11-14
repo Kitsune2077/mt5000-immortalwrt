@@ -35,6 +35,15 @@ CONFIG_PACKAGE_kmod-nft-tproxy=y
 # honk (doona) UDP NFQUEUE staging (queue 320); harmless otherwise
 CONFIG_PACKAGE_kmod-nft-queue=y
 
+# --- Open-Box (liandu2024/Open-Box) runtime deps ---
+# kmod-tun and ip-full are also pulled in by luci-app-openclash, but select
+# them explicitly so setting luci_extra_apps=false cannot silently remove
+# Open-Box's TUN device / `ip netns` support. kmod-nft-nat normally comes
+# from firewall4; keep it explicit for the same reason.
+CONFIG_PACKAGE_kmod-tun=y
+CONFIG_PACKAGE_ip-full=y
+CONFIG_PACKAGE_kmod-nft-nat=y
+
 # --- USB networking on the USB-A port ---
 # host stack (ssusb/tphy are enabled in the DTS; drivers must be installed
 # or the port stays dead)

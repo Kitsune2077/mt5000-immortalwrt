@@ -12,7 +12,7 @@ on:
           - master
           - '25.12'
       iwrt_ref:
-        description: 'ImmortalWrt 基础版本 (commit/tag/branch; 留空则用 iwrt_profile 默认基线: master→f44d1535b4, 25.12→84b665b5de; 显式填写时优先, 但需自行确保补丁能套用)'
+        description: 'ImmortalWrt 基础版本 (commit/tag/branch; 留空则用 iwrt_profile 默认基线: master→f44d1535b4, 25.12→761b7ff22c; 显式填写时优先, 但需自行确保补丁能套用)'
         required: false
         default: ''
         type: string
@@ -239,14 +239,15 @@ jobs:
             echo "iwrt_ref 显式指定, 优先于 iwrt_profile 默认基线: $IWRT_REF"
           elif [ "$IWRT_PROFILE" = "25.12" ]; then
             # ImmortalWrt 无 v25.12.3+ tag, 此 pin = openwrt-25.12 分支 HEAD
-            # (2026-10-24, 已并入上游 25.12.x(.6 世代) 修复)
-            IWRT_REF=84b665b5de
+            # (2026-11-11, 内核 6.12.116; 6.12.113+ 已含 dummy NAPI 上游修复,
+            #  故 patches-25.12 不再需要独立的 795-12 补丁)
+            IWRT_REF=761b7ff22c
           else
             IWRT_REF=f44d1535b4
           fi
           echo "IWRT_REF=$IWRT_REF" >> "$GITHUB_ENV"
           # 构建开始即报解析结果, 防止配置档选错刷错固件 (r23 事故)
-          echo "::notice::构建配置档: $IWRT_PROFILE | 基线: $IWRT_REF (master=f44d1535b4/内核6.18, 25.12=84b665b5de/内核6.12)"
+          echo "::notice::构建配置档: $IWRT_PROFILE | 基线: $IWRT_REF (master=f44d1535b4/内核6.18.52, 25.12=761b7ff22c/内核6.12.116)"
           echo "$LAN_IP" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || { echo "::error::非法 LAN IP: $LAN_IP"; exit 1; }
           if [ "$PPPOE" = "true" ] && [ -z "$PPPOE_USERNAME" ]; then
             echo "::error::启用了 PPPoE 但未填写账号 (pppoe_username)"; exit 1
@@ -306,14 +307,16 @@ jobs:
           #         + tagger 同步(控制帧解码 + mac_header 修复, 旧 tagger
           #           解不了 0004 的陷阱帧) + factory nvmem 单元 (0005,
           #           PR head 1713e8be63, 2026-11-05 四提交重构)
+          #         注: master 基线仍 pin 6.18.52; 6.18.56+ 已原生含 dummy
+          #         NAPI 提前分配, 升到该内核前须先从 0001/0002/0003 删除
+          #         795-12, 否则内核打补丁阶段会失败。
           # 25.12 : patches-25.12/ = dmsza/openwrt "[25.12] add support for
-          #         GL.iNet GL-MT5000" (现为 af67b61, 审阅修复已并入; 为适配
-          #         ImmortalWrt 树已剔除仅涉及 jiorouter 设备的 hunk,
-          #         其终态在上游已存在)
-          #         + 795-11 VLAN 卸载拒绝 + 795-12 重制 (0002, dmsza 8fbeeb6
-          #         + b325c2b 上下文重制; 基线 84b665b5de 内核 6.12.112 的
-          #         mtk_probe 错误路径已被上游 stable 改过, 0001 的旧 hunk
-          #         形态套不上)。
+          #         GL.iNet GL-MT5000" (2eba538, 2026-11-05; 即 PR #24237
+          #         1713e8be63 重构终态的 6.12 完整回移, 795-10 + 795-11;
+          #         为适配 ImmortalWrt 树已剔除仅涉及 jiorouter 设备的 hunk,
+          #         其终态在上游已存在)。
+          #         基线 761b7ff22c = openwrt-25.12 HEAD(内核 6.12.116)已含
+          #         dummy-NAPI 上游修复, 原 795-12 补丁(0002)已删除。
           #         各自只对已验证的基线保证干净套用。
           case "$IWRT_PROFILE" in
             25.12) PATCHDIR=../patches-25.12 ;;
@@ -492,6 +495,11 @@ jobs:
           # USB 网络(网卡/4G/5G 转接板/手机共享)关键符号抽查
           for U in kmod-usb3 kmod-usb-net-qmi-wwan kmod-usb-net-cdc-mbim kmod-usb-net-cdc-ncm kmod-usb-net-rndis kmod-usb-net-ipheth kmod-usb-net-rtl8152; do
             grep -qE "^CONFIG_PACKAGE_${U}=y" .config || { echo "::error::USB 网络组件缺失: $U (包名变动? 请核对 config/mt5000.seed)"; exit 1; }
+          done
+          # Open-Box 运行时依赖抽查 (kmod-tun/ip-full 也由 luci-app-openclash
+          # 带入; seed 已显式选中, 这里防止 luci_extra_apps=false 时静默丢失)
+          for U in kmod-tun ip-full kmod-nft-queue kmod-nft-nat kmod-veth ca-bundle; do
+            grep -qE "^CONFIG_PACKAGE_${U}=y" .config || { echo "::error::Open-Box 运行依赖缺失: $U (包名变动? 请核对 config/mt5000.seed)"; exit 1; }
           done
           if [ "$ENABLE_MWAN3" = "true" ]; then
             for U in mwan3 luci-app-mwan3; do
