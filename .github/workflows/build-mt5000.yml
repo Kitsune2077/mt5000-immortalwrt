@@ -355,6 +355,17 @@ jobs:
             done
           fi
           ./scripts/feeds update -a
+          # rust host toolchain: ImmortalWrt 的 packages feed 仍是
+          # download-ci-llvm=true, 从 ci-artifacts.rust-lang.org 下载预编译
+          # LLVM——该工件随版本更替被回收, 1.96.0 的工件已于 2026-11-06 后
+          # 404 (r30 构建因此失败: ERROR: failed to download llvm from ci)。
+          # 上游 openwrt/packages 自 4c3a649dd (2026-03) 起一律
+          # download-ci-llvm=false (本地源码编译 LLVM, 慢但不依赖临时工件)。
+          # 此 sed 自失效: feed 合并上游修复后不再匹配, 可安全保留。
+          sed -i 's/download-ci-llvm=true/download-ci-llvm=false/' \
+            feeds/packages/lang/rust/Makefile || true
+          grep -q 'download-ci-llvm=false' feeds/packages/lang/rust/Makefile \
+            || echo "::warning::feeds/packages/lang/rust/Makefile 未找到 download-ci-llvm (上游结构变动?)"
           # 25.12 profile: the openwrt-25.12 luci feed still ships argon
           # 2.4.7 (no settings UI; the standalone argon-config app does not
           # exist on that branch either). Overlay luci master's theme (3.x,
