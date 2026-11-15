@@ -1,0 +1,32 @@
+Subject: [PATCH] firewall4: refresh fullcone patch config hunk for 2026-11-08
+
+ImmortalWrt a4ba8240d8 ships firewall4 2026-11-08~3722eadc (bumped in
+dab12e766366) but has not refreshed its bundled fullcone patch. Upstream
+removed the "# option disable_ipv6" stub from root/etc/config/firewall, so
+001-firewall4-add-support-for-fullcone-nat.patch fails its first hunk
+("Hunk #1 FAILED at 5") and firewall4 cannot build.
+
+Retarget that hunk at the new default-config context so the fullcone and
+flow-offloading defaults still land in /etc/config/firewall. The remaining
+hunks apply unchanged apart from their usual offsets.
+
+This is a local workaround for the pinned master baseline. Delete it once
+ImmortalWrt commits its own "firewall4: refresh fullcone patches" for this
+snapshot; the patch is then expected to fail and should be dropped.
+---
+diff --git a/package/network/config/firewall4/patches/001-firewall4-add-support-for-fullcone-nat.patch b/package/network/config/firewall4/patches/001-firewall4-add-support-for-fullcone-nat.patch
+index 05e6c4d..5d8f76e 100644
+--- a/package/network/config/firewall4/patches/001-firewall4-add-support-for-fullcone-nat.patch
++++ b/package/network/config/firewall4/patches/001-firewall4-add-support-for-fullcone-nat.patch
+@@ -22,10 +22,8 @@ Renew: ZiMing Mo <msylgj@immortalwrt.org>
+ 
+ --- a/root/etc/config/firewall
+ +++ b/root/etc/config/firewall
+-@@ -5,6 +5,10 @@ config defaults
++@@ -5,4 +5,8 @@ config defaults
+  	option forward		REJECT
+- # Uncomment this line to disable ipv6 rules
+- #	option disable_ipv6	1
+ +	option flow_offloading	1
+ +	option flow_offloading_hw	1
+ +	option fullcone		1

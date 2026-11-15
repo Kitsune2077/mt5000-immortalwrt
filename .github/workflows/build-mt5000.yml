@@ -300,7 +300,7 @@ jobs:
         run: |
           cd immortalwrt
           # master : patches/ = openwrt PR #24237 官方四提交 vendored 原样
-          #         (PR head 1713e8be63, 2026-11-05 拆分重构; 已多设备
+          #         (0001~0004; PR head 1713e8be63, 2026-11-05 拆分重构; 已多设备
           #         Tested-by, 待 maintainer review):
           #         0001 = 3e95dd6bda RTL8366UB DSA 驱动 + 8021q tagger
           #                (仅剔除其对 bcm53xx 720 补丁的 2 行偏移同步 —
@@ -310,10 +310,14 @@ jobs:
           #         0003 = 4778588cd1 RTL8366UB PPE 卸载 (999-90, 含
           #                VLAN-aware 桥支持; 取代旧 0003 的拒绝式方案)
           #         0004 = 1713e8be63 MT5000 板级支持 + factory nvmem
+          #         0005 = 本仓库临时适配层: 刷新 ImmortalWrt 自带
+          #                firewall4 fullcone 补丁的 config hunk, 适配
+          #                2026-11-08~3722eadc 移除 disable_ipv6 注释后的
+          #                默认配置; 上游自行刷新该补丁后删除 0005。
           #         基线 a4ba8240d8 = ImmortalWrt master HEAD(内核 6.18.60),
           #         已同步 795-01~09/797-00~02/967 全系前置。
-          #         PR 合并进 openwrt main 且 ImmortalWrt 跟进后, 本目录
-          #         整体删除即可。
+          #         PR 合并进 openwrt main 且 ImmortalWrt 跟进后, 0001~0004
+          #         即可删除。
           # 25.12 : patches-25.12/ = dmsza/openwrt "[25.12] add support for
           #         GL.iNet GL-MT5000" (2eba538, 2026-11-05; 即 PR #24237
           #         1713e8be63 重构终态的 6.12 完整回移, 795-10 + 795-11;

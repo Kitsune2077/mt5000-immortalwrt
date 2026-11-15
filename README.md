@@ -303,7 +303,7 @@ Run workflow 时填写:
   `761b7ff22c`(ImmortalWrt `openwrt-25.12` 分支 HEAD @2026-11-11,内核 6.12.116,
   已并入上游 25.12.x 修复——ImmortalWrt 尚无 v25.12.3+ tag,故 pin 分支提交;
   补丁在 `patches-25.12/`)。`iwrt_ref` 显式填写时优先,但需自行确保对应补丁能套用。
-  跟进上游时:master 改基线需重验 `patches/0001~0004`;25.12 可跟进新 tag(如
+  跟进上游时:master 改基线需重验 `patches/0001~0005`;25.12 可跟进新 tag(如
   `v25.12.3`)或 dmsza 上游分支更新,补丁套用失败时 Action 会明确报错,基于新基线
   重新生成 `patches-25.12/0001-*.patch` 即可(源自
   [dmsza/openwrt](https://github.com/dmsza/openwrt) 的 `[25.12]` 回移 commit
@@ -320,7 +320,7 @@ Run workflow 时填写:
   Action 会明确报错,基于 PR #24237 最新 head 重新 vendored 四提交即可
 - **`patches/` = PR #24237 官方四提交 vendored**(head `1713e8be63`,
   2026-11-05 按评审要求拆分重构;CI 185 项全绿,多设备 Tested-by,待
-  maintainer review),替代此前自维护的 0001~0005 适配层:
+  maintainer review),替代此前自维护的适配层:
   - `0001` = `3e95dd6bda` RTL8366UB DSA 驱动 + 8021q tagger(含 BPDU/IGMP/MLD
     陷阱、原生控制标签收发、switch-init 强化;**仅剔除**其对 bcm53xx/720
     补丁的 2 行偏移同步——ImmortalWrt 该文件与 openwrt main 不同,且与本
@@ -331,9 +331,14 @@ Run workflow 时填写:
     桥的硬件卸载,取代旧 0003 的拒绝式方案)
   - `0004` = `1713e8be63` MT5000 板级支持(DTS 含 factory nvmem 单元、
     filogic.mk、platform.sh eMMC 配置保留、02_network)
+  - `0005` = 本仓库临时适配层:ImmortalWrt `a4ba8240d8` 把 firewall4 升到
+    `2026-11-08~3722eadc` 后未刷新其 fullcone 补丁,`root/etc/config/firewall`
+    删掉 `disable_ipv6` 注释导致 hunk #1 失配、firewall4 编译失败;0005 就地
+    更新该 hunk 的上下文,使 fullcone/flow-offloading 默认项仍写入新配置。
+    上游提交 "firewall4: refresh fullcone patches" 后删除本文件
   已在 `a4ba8240d8`(内核 6.18.60,含 795-01~09/797-00~02/967 全系前置)
   实测四提交依序干净套用。**PR 合并进 openwrt main 且 ImmortalWrt 跟进后,
-  本目录整体删除即可**;PR 若因评审 nit 重推,重新 vendored 一次
+  0001~0004 整体删除即可**;PR 若因评审 nit 重推,重新 vendored 一次
 - **升基线触发条件**:795-12 已随内核修复移除(6.18.56+/6.12.113+ 原生包含
   dummy netdev 提前分配);若升到不含 797-00~02 的基线,`0003`(999-90)会
   因 `wcid`/`num_tags` 签名缺失套不上,需退回旧拒绝式方案或补 797 系列
@@ -363,9 +368,11 @@ Run workflow 时填写:
 
 ```
 .github/workflows/build-mt5000.yml   # CI 流程(含 25 个自定义输入, GitHub 上限)
-patches/0001-*.patch                 # MT5000 设备支持(上游 PR #24237, master 基线)
-patches/0002-*.patch                 # PR #24237 审阅反馈修复(自 dmsza/openwrt 移植, master 基线)
-patches/0003-*.patch                 # VLAN-aware 桥拒绝 PPE 卸载(dmsza 8fbeeb6 的 795-11 段)
+patches/0001-*.patch                 # RTL8366UB DSA 驱动 + 8021q tagger(PR #24237, master 基线)
+patches/0002-*.patch                 # mtk 原生 DSA special-tag 门控(PR #24237, master 基线)
+patches/0003-*.patch                 # RTL8366UB PPE 卸载 999-90(PR #24237, master 基线)
+patches/0004-*.patch                 # MT5000 板级支持 + factory nvmem(PR #24237, master 基线)
+patches/0005-*.patch                 # 刷新 ImmortalWrt firewall4 fullcone 补丁 config hunk(临时)
 patches-25.12/0001-*.patch           # MT5000 设备支持 25.12 回移(dmsza 2eba538 = PR 1713e8be63 重构版)
 config/mt5000.seed                   # 固件配置种子(基础定制)
 config/luci-extra.seed               # LuCI 应用精选清单(luci_extra_apps 选项控制)
