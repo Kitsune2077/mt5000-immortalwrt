@@ -1,0 +1,401 @@
+From 1713e8be63b628fe2f1d336f4fb3a8aa152875af Mon Sep 17 00:00:00 2001
+From: Tao Luo <tao.luo@gl-inet.com>
+Date: Thu, 5 Nov 2026 15:18:02 +0800
+Subject: [PATCH] mediatek: filogic: add GL.iNet GL-MT5000
+
+The GL.iNet GL-MT5000 (Brume 3) is a gateway equipped with three
+2.5 Gbps Ethernet ports: two LAN ports and one WAN port.
+
+Hardware specifications:
+- SoC: MediaTek MT7987A (quad-core ARM Cortex-A53 at 2.0 GHz)
+- RAM: 1 GiB DDR4
+- Flash: 8 GiB eMMC
+- Ethernet: 2x 2.5 Gbps LAN through a Realtek RTL8366UB switch
+- Ethernet: 1x 2.5 Gbps WAN through the SoC internal PHY
+- Button: reset
+- LEDs: run (blue), system (white), VPN (white)
+- UART: 115200 8n1 (VCC, RX, TX, GND)
+
+Flash layout:
+- 0x0000000-0x0004400: GPT
+- 0x0400000-0x0480000: u-boot-env
+- 0x0480000-0x0880000: Factory
+- 0x0880000-0x0a80000: FIP
+- 0x0a80000-0x0c80000: cfg
+- 0x0c80000-0x0e80000: log
+- 0x0e80000-0x2e80000: kernel
+- 0x2e80000-0x12a80000: rootfs
+
+The base MAC address is stored in the Factory partition at offset 0x4000.
+The WAN MAC uses the base address, and the LAN MAC uses the base address
+plus one. Expose DDNS, backup serial, serial and country-code factory
+fields as fixed-layout NVMEM cells.
+
+Install OpenWrt from the stock firmware upgrade page. For command-line
+upgrades, copy the sysupgrade.bin image to /tmp and run:
+
+  sysupgrade -n /tmp/sysupgrade.bin
+
+Use -n when migrating from stock firmware to avoid preserving
+incompatible settings.
+
+Link: https://github.com/openwrt/openwrt/pull/24237
+Signed-off-by: Tao Luo <tao.luo@gl-inet.com>
+Signed-off-by: Hongjian Zhang <hongjian.zhang@gl-inet.com>
+---
+ .../mediatek/dts/mt7987a-glinet-gl-mt5000.dts | 269 ++++++++++++++++++
+ .../filogic/base-files/etc/board.d/02_network |   3 +
+ .../base-files/lib/upgrade/platform.sh        |   2 +
+ target/linux/mediatek/filogic/config-6.18     |   3 +
+ target/linux/mediatek/image/filogic.mk        |  14 +
+ 5 files changed, 291 insertions(+)
+ create mode 100644 target/linux/mediatek/dts/mt7987a-glinet-gl-mt5000.dts
+
+diff --git a/target/linux/mediatek/dts/mt7987a-glinet-gl-mt5000.dts b/target/linux/mediatek/dts/mt7987a-glinet-gl-mt5000.dts
+new file mode 100644
+index 00000000000000..7d0efc5a440507
+--- /dev/null
++++ b/target/linux/mediatek/dts/mt7987a-glinet-gl-mt5000.dts
+@@ -0,0 +1,269 @@
++/* SPDX-License-Identifier: (GPL-2.0 OR MIT) */
++
++/dts-v1/;
++#include "mt7987a.dtsi"
++#include <dt-bindings/input/input.h>
++#include <dt-bindings/interrupt-controller/irq.h>
++#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/leds/common.h>
++
++/ {
++	model = "GL.iNet GL-MT5000";
++	compatible = "glinet,gl-mt5000",
++				"mediatek,mt7987a", "mediatek,mt7987";
++
++	aliases {
++		label-mac-device = &gmac1;
++		led-boot = &led_power;
++		led-failsafe = &led_power;
++		led-running = &led_power;
++		led-upgrade = &led_power;
++		serial0 = &uart0;
++	};
++
++	chosen {
++		stdout-path = "serial0:115200n8";
++		bootargs = "console=ttyS0,115200n1 loglevel=8  \
++				earlycon=uart8250,mmio32,0x11000000 \
++				root=PARTLABEL=rootfs rootwait \
++			    rootfstype=squashfs,f2fs pci=pcie_bus_perf";
++	};
++
++	gpio-keys {
++		compatible = "gpio-keys";
++
++		reset {
++			label = "reset";
++			linux,code = <KEY_RESTART>;
++			gpios = <&pio 4 GPIO_ACTIVE_LOW>;
++			debounce-interval = <10>;
++		};
++	};
++
++	gpio-export {
++		compatible = "gpio-export";
++
++		usb_power {
++			gpio-export,name = "usb_power";
++			gpio-export,output = <1>;
++			gpios = <&pio 9 GPIO_ACTIVE_HIGH>;
++		};
++	};
++
++	leds {
++		compatible = "gpio-leds";
++
++		led_power: led-0 {
++			color = <LED_COLOR_ID_BLUE>;
++			function = "run";
++			gpios = <&pio 44 GPIO_ACTIVE_LOW>;
++			default-state = "on";
++		};
++
++		led-1 {
++			color = <LED_COLOR_ID_WHITE>;
++			function = "system";
++			gpios = <&pio 7 GPIO_ACTIVE_LOW>;
++		};
++
++		led-2 {
++			color = <LED_COLOR_ID_WHITE>;
++			function = "vpn";
++			gpios = <&pio 43 GPIO_ACTIVE_LOW>;
++		};
++	};
++
++	reg_1p8v: regulator-1p8v {
++		compatible = "regulator-fixed";
++		regulator-name = "fixed-1.8V";
++		regulator-min-microvolt = <1800000>;
++		regulator-max-microvolt = <1800000>;
++		regulator-boot-on;
++		regulator-always-on;
++	};
++
++	reg_3p3v: regulator-3p3v {
++		compatible = "regulator-fixed";
++		regulator-name = "fixed-3.3V";
++		regulator-min-microvolt = <3300000>;
++		regulator-max-microvolt = <3300000>;
++		regulator-boot-on;
++		regulator-always-on;
++	};
++
++};
++
++&mmc0 {
++	pinctrl-names = "default", "state_uhs";
++	pinctrl-0 = <&mmc_pins_default>;
++	pinctrl-1 = <&mmc_pins_uhs>;
++	bus-width = <8>;
++	max-frequency = <26000000>;
++	cap-mmc-highspeed;
++	vqmmc-supply = <&reg_3p3v>;
++	vmmc-supply = <&reg_3p3v>;
++	mmc-ddr-3_3v;
++	non-removable;
++	no-sd;
++	no-sdio;
++	status = "okay";
++
++	card@0 {
++		compatible = "mmc-card";
++		reg = <0>;
++
++		block {
++			compatible = "block-device";
++			partitions {
++				block-partition-env {
++					partname = "u-boot-env";
++
++					nvmem-layout {
++						compatible = "u-boot,env";
++					};
++				};
++
++				block-partition-factory {
++					partname = "factory";
++
++					nvmem-layout {
++						compatible = "fixed-layout";
++						#address-cells = <1>;
++						#size-cells = <1>;
++
++						macaddr_base: macaddr@4000 {
++							compatible = "mac-base";
++							reg = <0x4000 0x6>;
++							#nvmem-cell-cells = <1>;
++						};
++
++						ddns@4010 {
++							reg = <0x4010 0x10>;
++						};
++
++						sn-bak@4020 {
++							reg = <0x4020 0x10>;
++						};
++
++						sn@4030 {
++							reg = <0x4030 0x10>;
++						};
++
++						country-code@4088 {
++							reg = <0x4088 0x10>;
++						};
++					};
++
++				};
++			};
++		};
++	};
++};
++
++&gmac0 {
++	compatible = "mediatek,eth-mac";
++	reg = <0>;
++	mac-type = "gdm";
++	phy-mode = "2500base-x";
++	status = "okay";
++	nvmem-cells = <&macaddr_base 1>;
++	nvmem-cell-names = "mac-address";
++
++	fixed-link {
++		speed = <2500>;
++		full-duplex;
++		pause;
++	};
++};
++
++&gmac1 {
++	reg = <1>;
++	mac-type = "xgdm";
++	phy-mode = "internal";
++	phy-handle = <&phy15>;
++	status = "okay";
++	nvmem-cells = <&macaddr_base 0>;
++	nvmem-cell-names = "mac-address";
++};
++
++&mdio {
++	#address-cells = <1>;
++	#size-cells = <0>;
++	reset-gpios = <&pio 0 GPIO_ACTIVE_LOW>;
++	reset-delay-us = <10000>;
++	phy15: phy@f {
++		compatible = "ethernet-phy-ieee802.3-c45";
++		reg = <15>;
++		pinctrl-names = "i2p5gbe-led";
++		pinctrl-0 = <&i2p5gbe_led0_pins>;
++		phy-mode = "internal";
++	};
++
++	switch@0 {
++		compatible = "realtek,rtl8366ub";
++		reg = <0>;
++		reset-gpios = <&pio 48 GPIO_ACTIVE_LOW>;
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			port@0 {
++				reg = <0>;
++				label = "lan1";
++				phy-mode = "internal";
++			};
++
++			port@1 {
++				reg = <1>;
++				label = "lan2";
++				phy-mode = "internal";
++			};
++
++			port@17 {
++				reg = <17>;
++				label = "cpu";
++				ethernet = <&gmac0>;
++				phy-mode = "2500base-x";
++
++				fixed-link {
++					speed = <2500>;
++					full-duplex;
++					pause;
++				};
++			};
++		};
++	};
++};
++
++&ssusb {
++	status = "okay";
++};
++
++&tphyu3port0 {
++	status = "okay";
++};
++
++&uart0 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&uart0_pins>;
++	status = "okay";
++};
++
++&infra_bus_prot {
++	status = "okay";
++};
++
++&boottrap {
++	status = "okay";
++};
++
++&trng {
++	status = "okay";
++};
++
++&lvts {
++	status = "okay";
++};
+diff --git a/target/linux/mediatek/filogic/base-files/etc/board.d/02_network b/target/linux/mediatek/filogic/base-files/etc/board.d/02_network
+index baa61f28278275..6c893304fc62ff 100644
+--- a/target/linux/mediatek/filogic/base-files/etc/board.d/02_network
++++ b/target/linux/mediatek/filogic/base-files/etc/board.d/02_network
+@@ -175,6 +175,9 @@ mediatek_setup_interfaces()
+ 	wavlink,wl-wnt100x3-ubootmod)
+ 		ucidef_set_interfaces_lan_wan eth0 eth1
+ 		;;
++	glinet,gl-mt5000)
++		ucidef_set_interfaces_lan_wan "lan1 lan2" eth1
++		;;
+ 	bazis,ax3000wm|\
+ 	cudy,m3000-v1|\
+ 	cudy,m3000-v1-ubootmod|\
+diff --git a/target/linux/mediatek/filogic/base-files/lib/upgrade/platform.sh b/target/linux/mediatek/filogic/base-files/lib/upgrade/platform.sh
+index 9dd88a86f00b35..2ce7c423d176d9 100644
+--- a/target/linux/mediatek/filogic/base-files/lib/upgrade/platform.sh
++++ b/target/linux/mediatek/filogic/base-files/lib/upgrade/platform.sh
+@@ -236,6 +236,7 @@ platform_do_upgrade() {
+ 	glinet,gl-be14000|\
+ 	glinet,gl-mt2500|\
+ 	glinet,gl-mt2500-airoha|\
++	glinet,gl-mt5000|\
+ 	glinet,gl-mt6000|\
+ 	glinet,gl-x3000|\
+ 	glinet,gl-xe3000|\
+@@ -530,6 +531,7 @@ platform_copy_config() {
+ 	glinet,gl-be14000|\
+ 	glinet,gl-mt2500|\
+ 	glinet,gl-mt2500-airoha|\
++	glinet,gl-mt5000|\
+ 	glinet,gl-mt6000|\
+ 	glinet,gl-x3000|\
+ 	glinet,gl-xe3000|\
+diff --git a/target/linux/mediatek/filogic/config-6.18 b/target/linux/mediatek/filogic/config-6.18
+index 8feee39b325280..c481e7388a3a5a 100644
+--- a/target/linux/mediatek/filogic/config-6.18
++++ b/target/linux/mediatek/filogic/config-6.18
+@@ -316,6 +316,9 @@ CONFIG_NET_DSA_AN8855=y
+ CONFIG_NET_DSA_MT7530=y
+ CONFIG_NET_DSA_MT7530_MDIO=y
+ CONFIG_NET_DSA_MT7530_MMIO=y
++CONFIG_NET_DSA_REALTEK=y
++CONFIG_NET_DSA_REALTEK_MDIO=y
++CONFIG_NET_DSA_REALTEK_RTL8366UB=y
+ CONFIG_NET_DSA_TAG_MTK=y
+ CONFIG_NET_DSA_TAG_YT921X=y
+ CONFIG_NET_DSA_TAG_YT922X=y
+diff --git a/target/linux/mediatek/image/filogic.mk b/target/linux/mediatek/image/filogic.mk
+index 5e19029a9303a8..8b0f0ca085edce 100644
+--- a/target/linux/mediatek/image/filogic.mk
++++ b/target/linux/mediatek/image/filogic.mk
+@@ -2100,6 +2100,20 @@ define Device/glinet_gl-mt3600be
+ endef
+ TARGET_DEVICES += glinet_gl-mt3600be
+ 
++define Device/glinet_gl-mt5000
++  DEVICE_VENDOR := GL.iNet
++  DEVICE_MODEL := GL-MT5000
++  DEVICE_DTS := mt7987a-glinet-gl-mt5000
++  DEVICE_DTS_DIR := ../dts
++  SUPPORTED_DEVICES := glinet,gl-mt5000
++  DEVICE_PACKAGES := mkf2fs blkid blockdev kmod-fs-ext4 mt7987-2p5g-phy-firmware \
++                     kmod-mmc kmod-fs-f2fs kmod-fs-vfat
++  IMAGES += factory.bin
++  IMAGE/factory.bin := append-kernel | pad-to 32M | append-rootfs
++  IMAGE/sysupgrade.bin := sysupgrade-tar | append-gl-metadata
++endef
++TARGET_DEVICES += glinet_gl-mt5000
++
+ define Device/glinet_gl-mt6000
+   DEVICE_VENDOR := GL.iNet
+   DEVICE_MODEL := GL-MT6000

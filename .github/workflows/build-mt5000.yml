@@ -299,17 +299,21 @@ jobs:
       - name: Apply MT5000 device patch
         run: |
           cd immortalwrt
-          # master : patches/ = openwrt PR #24237 head (0001 设备支持本体)
-          #         + 该 PR 的审阅反馈修复 (0002, 自 dmsza/openwrt 移植)
-          #         + VLAN-aware 桥拒绝 PPE 卸载 (0003, dmsza 8fbeeb6 的
-          #           795-11 段; 795-12 已随 6.18.56+ 上游修复移除)
-          #         + 交换机初始化强化 + BPDU/IGMP/MLD 陷阱到 CPU (0004,
-          #           PR head 89a10ec, 2026-10-26 真机复测通过; 795-11 PPE
-          #           卸载重构暂缓, 等 PEPITO82 复位 bug 复测有结论)
-          #         + tagger 同步(控制帧解码 + mac_header 修复, 旧 tagger
-          #           解不了 0004 的陷阱帧) + factory nvmem 单元 (0005,
-          #           PR head 1713e8be63, 2026-11-05 四提交重构)
-          #         基线 a4ba8240d8 = ImmortalWrt master HEAD(内核 6.18.60)。
+          # master : patches/ = openwrt PR #24237 官方四提交 vendored 原样
+          #         (PR head 1713e8be63, 2026-11-05 拆分重构; 已多设备
+          #         Tested-by, 待 maintainer review):
+          #         0001 = 3e95dd6bda RTL8366UB DSA 驱动 + 8021q tagger
+          #                (仅剔除其对 bcm53xx 720 补丁的 2 行偏移同步 —
+          #                 ImmortalWrt 该文件与 openwrt main 不同且与本
+          #                 mediatek 单目标构建无关)
+          #         0002 = 9868cd4bc5 mtk 原生 DSA special-tag 仅限 MTK tagger
+          #         0003 = 4778588cd1 RTL8366UB PPE 卸载 (999-90, 含
+          #                VLAN-aware 桥支持; 取代旧 0003 的拒绝式方案)
+          #         0004 = 1713e8be63 MT5000 板级支持 + factory nvmem
+          #         基线 a4ba8240d8 = ImmortalWrt master HEAD(内核 6.18.60),
+          #         已同步 795-01~09/797-00~02/967 全系前置。
+          #         PR 合并进 openwrt main 且 ImmortalWrt 跟进后, 本目录
+          #         整体删除即可。
           # 25.12 : patches-25.12/ = dmsza/openwrt "[25.12] add support for
           #         GL.iNet GL-MT5000" (2eba538, 2026-11-05; 即 PR #24237
           #         1713e8be63 重构终态的 6.12 完整回移, 795-10 + 795-11;
