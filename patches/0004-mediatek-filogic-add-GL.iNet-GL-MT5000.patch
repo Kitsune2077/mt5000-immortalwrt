@@ -1,4 +1,4 @@
-From 1713e8be63b628fe2f1d336f4fb3a8aa152875af Mon Sep 17 00:00:00 2001
+From 0185fe26719df37d0114ea9ce83b39932f19f3e2 Mon Sep 17 00:00:00 2001
 From: Tao Luo <tao.luo@gl-inet.com>
 Date: Thu, 5 Nov 2026 15:18:02 +0800
 Subject: [PATCH] mediatek: filogic: add GL.iNet GL-MT5000
@@ -43,20 +43,20 @@ Link: https://github.com/openwrt/openwrt/pull/24237
 Signed-off-by: Tao Luo <tao.luo@gl-inet.com>
 Signed-off-by: Hongjian Zhang <hongjian.zhang@gl-inet.com>
 ---
- .../mediatek/dts/mt7987a-glinet-gl-mt5000.dts | 269 ++++++++++++++++++
- .../filogic/base-files/etc/board.d/02_network |   3 +
+ .../mediatek/dts/mt7987a-glinet-gl-mt5000.dts | 260 ++++++++++++++++++
+ .../filogic/base-files/etc/board.d/02_network |   1 +
  .../base-files/lib/upgrade/platform.sh        |   2 +
  target/linux/mediatek/filogic/config-6.18     |   3 +
  target/linux/mediatek/image/filogic.mk        |  14 +
- 5 files changed, 291 insertions(+)
+ 5 files changed, 280 insertions(+)
  create mode 100644 target/linux/mediatek/dts/mt7987a-glinet-gl-mt5000.dts
 
 diff --git a/target/linux/mediatek/dts/mt7987a-glinet-gl-mt5000.dts b/target/linux/mediatek/dts/mt7987a-glinet-gl-mt5000.dts
 new file mode 100644
-index 00000000000000..7d0efc5a440507
+index 00000000000000..456c2f37f545c7
 --- /dev/null
 +++ b/target/linux/mediatek/dts/mt7987a-glinet-gl-mt5000.dts
-@@ -0,0 +1,269 @@
+@@ -0,0 +1,260 @@
 +/* SPDX-License-Identifier: (GPL-2.0 OR MIT) */
 +
 +/dts-v1/;
@@ -82,9 +82,9 @@ index 00000000000000..7d0efc5a440507
 +
 +	chosen {
 +		stdout-path = "serial0:115200n8";
-+		bootargs = "console=ttyS0,115200n1 loglevel=8  \
-+				earlycon=uart8250,mmio32,0x11000000 \
-+				root=PARTLABEL=rootfs rootwait \
++		bootargs = "console=ttyS0,115200n1 loglevel=8 \
++			    earlycon=uart8250,mmio32,0x11000000 \
++			    root=PARTLABEL=rootfs rootwait \
 +			    rootfstype=squashfs,f2fs pci=pcie_bus_perf";
 +	};
 +
@@ -130,15 +130,6 @@ index 00000000000000..7d0efc5a440507
 +			function = "vpn";
 +			gpios = <&pio 43 GPIO_ACTIVE_LOW>;
 +		};
-+	};
-+
-+	reg_1p8v: regulator-1p8v {
-+		compatible = "regulator-fixed";
-+		regulator-name = "fixed-1.8V";
-+		regulator-min-microvolt = <1800000>;
-+		regulator-max-microvolt = <1800000>;
-+		regulator-boot-on;
-+		regulator-always-on;
 +	};
 +
 +	reg_3p3v: regulator-3p3v {
@@ -327,19 +318,17 @@ index 00000000000000..7d0efc5a440507
 +	status = "okay";
 +};
 diff --git a/target/linux/mediatek/filogic/base-files/etc/board.d/02_network b/target/linux/mediatek/filogic/base-files/etc/board.d/02_network
-index baa61f28278275..6c893304fc62ff 100644
+index 922c7cd..ad21d50 100644
 --- a/target/linux/mediatek/filogic/base-files/etc/board.d/02_network
 +++ b/target/linux/mediatek/filogic/base-files/etc/board.d/02_network
-@@ -175,6 +175,9 @@ mediatek_setup_interfaces()
- 	wavlink,wl-wnt100x3-ubootmod)
- 		ucidef_set_interfaces_lan_wan eth0 eth1
+@@ -254,6 +254,7 @@ mediatek_setup_interfaces()
+ 	tplink,fr365-v1)
+ 		ucidef_set_interfaces_lan_wan "port1 port3 port4 port5 port6" "port2"
  		;;
-+	glinet,gl-mt5000)
-+		ucidef_set_interfaces_lan_wan "lan1 lan2" eth1
-+		;;
- 	bazis,ax3000wm|\
- 	cudy,m3000-v1|\
- 	cudy,m3000-v1-ubootmod|\
++	glinet,gl-mt5000|\
+ 	tplink,tl-xdr6086|\
+ 	wavlink,wl-wn551x3|\
+ 	wavlink,wl-wn586x3|\
 diff --git a/target/linux/mediatek/filogic/base-files/lib/upgrade/platform.sh b/target/linux/mediatek/filogic/base-files/lib/upgrade/platform.sh
 index 9dd88a86f00b35..2ce7c423d176d9 100644
 --- a/target/linux/mediatek/filogic/base-files/lib/upgrade/platform.sh
@@ -375,7 +364,7 @@ index 8feee39b325280..c481e7388a3a5a 100644
  CONFIG_NET_DSA_TAG_YT921X=y
  CONFIG_NET_DSA_TAG_YT922X=y
 diff --git a/target/linux/mediatek/image/filogic.mk b/target/linux/mediatek/image/filogic.mk
-index 5e19029a9303a8..8b0f0ca085edce 100644
+index 5e19029a9303a8..c01bea44a4eb81 100644
 --- a/target/linux/mediatek/image/filogic.mk
 +++ b/target/linux/mediatek/image/filogic.mk
 @@ -2100,6 +2100,20 @@ define Device/glinet_gl-mt3600be
@@ -388,8 +377,8 @@ index 5e19029a9303a8..8b0f0ca085edce 100644
 +  DEVICE_DTS := mt7987a-glinet-gl-mt5000
 +  DEVICE_DTS_DIR := ../dts
 +  SUPPORTED_DEVICES := glinet,gl-mt5000
-+  DEVICE_PACKAGES := mkf2fs blkid blockdev kmod-fs-ext4 mt7987-2p5g-phy-firmware \
-+                     kmod-mmc kmod-fs-f2fs kmod-fs-vfat
++  DEVICE_PACKAGES := -wpad-basic-mbedtls mkf2fs blkid blockdev kmod-fs-ext4 kmod-usb3 \
++                     mt7987-2p5g-phy-firmware kmod-mmc kmod-fs-f2fs kmod-fs-vfat
 +  IMAGES += factory.bin
 +  IMAGE/factory.bin := append-kernel | pad-to 32M | append-rootfs
 +  IMAGE/sysupgrade.bin := sysupgrade-tar | append-gl-metadata

@@ -318,9 +318,11 @@ Run workflow 时填写:
   也不再需要
 - 想跟进 ImmortalWrt master:`iwrt_ref` 填 `master`;设备补丁应用失败时
   Action 会明确报错,基于 PR #24237 最新 head 重新 vendored 四提交即可
-- **`patches/` = PR #24237 官方四提交 vendored**(head `1713e8be63`,
-  2026-11-05 按评审要求拆分重构;CI 185 项全绿,多设备 Tested-by,待
-  maintainer review),替代此前自维护的适配层:
+- **`patches/` = PR #24237 官方四提交 vendored**(head `0185fe26`,
+  2026-11-17 重推;前三个提交 SHA 未变,仅第 4 个板级提交更新:02_network
+  改为并入多板 case 组、filogic.mk 增 `-wpad-basic-mbedtls`(本设备无
+  WiFi,去掉 target 默认 wpad)与 `kmod-usb3`、DTS 删除未被引用的
+  `reg_1p8v` 稳压器),替代此前自维护的适配层:
   - `0001` = `3e95dd6bda` RTL8366UB DSA 驱动 + 8021q tagger(含 BPDU/IGMP/MLD
     陷阱、原生控制标签收发、switch-init 强化;**仅剔除**其对 bcm53xx/720
     补丁的 2 行偏移同步——ImmortalWrt 该文件与 openwrt main 不同,且与本
@@ -329,8 +331,11 @@ Run workflow 时填写:
     SPTAG_V3/GDMA special tag)
   - `0003` = `4778588cd1` RTL8366UB PPE 卸载(`999-90`,**支持** VLAN-aware
     桥的硬件卸载,取代旧 0003 的拒绝式方案)
-  - `0004` = `1713e8be63` MT5000 板级支持(DTS 含 factory nvmem 单元、
-    filogic.mk、platform.sh eMMC 配置保留、02_network)
+  - `0004` = `0185fe26` MT5000 板级支持(DTS 含 factory nvmem 单元、
+    filogic.mk、platform.sh eMMC 配置保留、02_network);其 02_network
+    hunk 已按本仓库基线 `a4ba8240d8` 的布局重新基准化——上游新提交基于
+    2026-11-17 的上游布局,原样套用需 fuzz 2,而 CI 的 `git apply`
+    不容忍 fuzz,故仅重置该 hunk 的上下文(改动内容不变)
   - `0005` = 本仓库临时适配层:ImmortalWrt `a4ba8240d8` 把 firewall4 升到
     `2026-11-08~3722eadc` 后未刷新其 fullcone 补丁,`root/etc/config/firewall`
     删掉 `disable_ipv6` 注释导致 hunk #1 失配、firewall4 编译失败;0005 就地
