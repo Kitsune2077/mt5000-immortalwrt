@@ -300,7 +300,7 @@ jobs:
         run: |
           cd immortalwrt
           # master : patches/ = openwrt PR #24237 官方四提交 vendored 原样
-          #         (0001~0004; PR head 1713e8be63, 2026-11-05 拆分重构; 已多设备
+          #         (0001~0004; PR head 0185fe26, 2026-11-17 重推; 已多设备
           #         Tested-by, 待 maintainer review):
           #         0001 = 3e95dd6bda RTL8366UB DSA 驱动 + 8021q tagger
           #                (仅剔除其对 bcm53xx 720 补丁的 2 行偏移同步 —
@@ -309,7 +309,10 @@ jobs:
           #         0002 = 9868cd4bc5 mtk 原生 DSA special-tag 仅限 MTK tagger
           #         0003 = 4778588cd1 RTL8366UB PPE 卸载 (999-90, 含
           #                VLAN-aware 桥支持; 取代旧 0003 的拒绝式方案)
-          #         0004 = 1713e8be63 MT5000 板级支持 + factory nvmem
+          #         0004 = 0185fe26 MT5000 板级支持 + factory nvmem
+          #                (-wpad-basic-mbedtls / 无 reg_1p8v; 02_network
+          #                 hunk 已按本基线 a4ba8240d8 的布局重新基准化 —
+          #                 上游原样需 fuzz 2, 而这里的 git apply 不容忍 fuzz)
           #         0005 = 本仓库临时适配层: 刷新 ImmortalWrt 自带
           #                firewall4 fullcone 补丁的 config hunk, 适配
           #                2026-11-08~3722eadc 移除 disable_ipv6 注释后的
