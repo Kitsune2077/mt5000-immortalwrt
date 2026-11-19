@@ -89,6 +89,13 @@ CONFIG_PACKAGE_autocore=y
 # Web upload/run installer (mandatory; wukongdaily, feed added by the workflow)
 CONFIG_PACKAGE_luci-app-run=y
 
+# Vantage theme + live dashboard (anothaDev, feed added by the workflow).
+# Default-active on fresh install via the package's own uci-defaults
+# (30_luci-theme-vantage sorts after 30_luci-theme-argon, so it wins);
+# argon remains installed and switchable in System -> Language and Style.
+CONFIG_PACKAGE_luci-theme-vantage=y
+CONFIG_PACKAGE_luci-app-vantage=y
+
 # iStore app store (feed added by the workflow)
 CONFIG_PACKAGE_xz-utils=y
 CONFIG_PACKAGE_luci-app-store=y

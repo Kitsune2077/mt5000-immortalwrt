@@ -181,6 +181,10 @@ uci show mwan3 | grep -E 'rule_v6|family'
   「mwan3 与 IPv6」),所以默认不会影响 IPv6
 - 内核 BTF + XDP_SOCKETS(eBPF CO-RE 前置)
 - daede 运行前置依赖全套内置:kmod 五件套 + v2ray geo 数据 + ca-bundle
+- **Vantage 主题 + 实时仪表盘**([anothaDev/luci-theme-vantage](https://github.com/anothaDev/luci-theme-vantage),
+  默认主题——其 uci-defaults 在首启自动生效(仅全新安装,不覆盖用户选择);
+  仪表盘应用提供连接设备/流量/网络路径概览。argon 保留安装,可在
+  系统→语言和风格 随时切换)
 - iStore 软件商店
 - `enable_quickstart=true` 时额外编入 **luci-app-quickstart**(iStoreOS 风格首页/
   网络向导,见选项表;LuCI 菜单进入「向导」/Quickstart,也可自行设为默认首页)
@@ -355,6 +359,13 @@ Run workflow 时填写:
   覆盖注入 `feeds/luci` 并校验覆盖后版本为 3.x(3.0 的 `ucode-mod-math`
   依赖在 25.12 基线已具备)。上游把 argon 3.x 回移 openwrt-25.12 luci 分支
   后,删除 workflow 中 "25.12 argon overlay" 那段即可
+- vantage 主题:来自外部 feed(`src-git vantage …;main`,分支浮动,构建时
+  锁定当日版本);包依赖仅 `+luci-base`,两个配置档通用。默认主题机制:
+  其 `30_luci-theme-vantage` uci-defaults 按字母序在 argon 的
+  `30_luci-theme-argon` 之后执行,首启设为 `luci.main.mediaurlbase`,
+  全新安装即默认生效;若上游改名该脚本导致顺序变化,需在
+  `files/etc/uci-defaults/` 补一个更靠后的 `mediaurlbase` 设置。
+  上游若并入 luci feed,删除 workflow 中 vantage feed 行与 install 行即可
 - 改首启行为:输入项之外的固化定制放 `files/etc/uci-defaults/`;
   IPv6 那套 uci 写入由 workflow 里 `enable_ipv6` 分支生成 `99-ipv6`,
   要加别的 IPv6 项直接改 workflow 那段即可;

@@ -344,6 +344,10 @@ jobs:
           cp -r ../files/. ./
           # luci-app-run (wukongdaily 网页上传/运行安装器) 必装: 源码 feed (注意分支是 master)
           echo 'src-git wkd https://github.com/wukongdaily/luci-app-run;master' >> feeds.conf.default
+          # vantage 主题 + 实时仪表盘 (anothaDev): 默认主题, 其 uci-defaults 在首启
+          # 自动激活(仅全新安装); 与 argon 的 30_luci-theme-argon 按字母序先后执行,
+          # vantage 靠后胜出成为默认, argon 保留可随时切换
+          echo 'src-git vantage https://github.com/anothaDev/luci-theme-vantage;main' >> feeds.conf.default
           if [ "$ENABLE_STORE" = "true" ] || [ "$ENABLE_QUICKSTART" = "true" ]; then
             # luci-app-quickstart 硬依赖 luci-app-store, 故 quickstart 也需要 istore 源
             echo 'src-git istore https://github.com/linkease/istore;main' >> feeds.conf.default
@@ -395,6 +399,7 @@ jobs:
             esac
           fi
           ./scripts/feeds install -a
+          ./scripts/feeds install -p vantage luci-theme-vantage luci-app-vantage
           if [ "$ENABLE_STORE" = "true" ] || [ "$ENABLE_QUICKSTART" = "true" ]; then
             ./scripts/feeds install -d y -p istore luci-app-store
           fi
@@ -514,6 +519,9 @@ jobs:
           grep -qE 'TARGET_mediatek_filogic_DEVICE_glinet_gl-mt5000=y' .config || { echo "::error::设备目标缺失"; exit 1; }
           grep -qE 'CONFIG_KERNEL_DEBUG_INFO_BTF=y' .config            || { echo "::error::内核 BTF 缺失"; exit 1; }
           grep -qE 'CONFIG_PACKAGE_luci-app-run=y' .config             || { echo "::error::luci-app-run 缺失 (wkd feed 安装失败?)"; exit 1; }
+          for U in luci-theme-vantage luci-app-vantage; do
+            grep -qE "^CONFIG_PACKAGE_${U}=y" .config || { echo "::error::vantage 缺失: $U (vantage feed 安装失败? Makefile 结构变动?)"; exit 1; }
+          done
           # USB 网络(网卡/4G/5G 转接板/手机共享)关键符号抽查
           for U in kmod-usb3 kmod-usb-net-qmi-wwan kmod-usb-net-cdc-mbim kmod-usb-net-cdc-ncm kmod-usb-net-rndis kmod-usb-net-ipheth kmod-usb-net-rtl8152; do
             grep -qE "^CONFIG_PACKAGE_${U}=y" .config || { echo "::error::USB 网络组件缺失: $U (包名变动? 请核对 config/mt5000.seed)"; exit 1; }
@@ -873,6 +881,7 @@ jobs:
             echo "- MT5000 设备支持(上游 PR [openwrt#24237](https://github.com/openwrt/openwrt/pull/24237) 移植 + 审阅反馈修复)"
             echo "- 已在本项目固件之间升级时 sysupgrade 可保留配置(eMMC + platform_copy_config)"
             echo "- LuCI 应用精选清单(见 config/luci-extra.seed)"
+            echo "- Vantage 主题+实时仪表盘(默认主题, 首启自动生效; argon 保留可在 系统→语言和风格 切换)"
             echo "- 内核 BTF + XDP_SOCKETS(eBPF CO-RE 前置,daede 可用)"
             echo "- daede 运行前置依赖:kmod 五件套 + v2ray geo 数据 + ca-bundle"
             echo "- autocore 状态页(CPU 型号/频率/温度)"
