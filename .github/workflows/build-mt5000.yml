@@ -519,8 +519,8 @@ jobs:
           grep -qE 'TARGET_mediatek_filogic_DEVICE_glinet_gl-mt5000=y' .config || { echo "::error::设备目标缺失"; exit 1; }
           grep -qE 'CONFIG_KERNEL_DEBUG_INFO_BTF=y' .config            || { echo "::error::内核 BTF 缺失"; exit 1; }
           grep -qE 'CONFIG_PACKAGE_luci-app-run=y' .config             || { echo "::error::luci-app-run 缺失 (wkd feed 安装失败?)"; exit 1; }
-          for U in luci-theme-vantage luci-app-vantage; do
-            grep -qE "^CONFIG_PACKAGE_${U}=y" .config || { echo "::error::vantage 缺失: $U (vantage feed 安装失败? Makefile 结构变动?)"; exit 1; }
+          for U in luci-theme-vantage luci-app-vantage luci-i18n-vantage-theme-zh-cn luci-i18n-vantage-zh-cn; do
+            grep -qE "^CONFIG_PACKAGE_${U}=y" .config || { echo "::error::vantage 缺失: $U (vantage feed 安装失败? Makefile 结构变动? i18n 缺失=上游删了 zh_Hans 翻译?)"; exit 1; }
           done
           # USB 网络(网卡/4G/5G 转接板/手机共享)关键符号抽查
           for U in kmod-usb3 kmod-usb-net-qmi-wwan kmod-usb-net-cdc-mbim kmod-usb-net-cdc-ncm kmod-usb-net-rndis kmod-usb-net-ipheth kmod-usb-net-rtl8152; do
